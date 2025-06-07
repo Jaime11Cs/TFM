@@ -45,3 +45,14 @@ TFM/
 ```bash
 git clone git@github.com:Jaime11Cs/TFM.git
 cd TFM
+```
+---
+
+## Autor
+
+**Jaime Carreto Sánchez**  
+Máster en Bioinformática  
+Universidad [Universidad de Murcia]  
+Correo: jaime.carretos@um.es 
+GitHub: [@Jaime11Cs](https://github.com/Jaime11Cs)
+
