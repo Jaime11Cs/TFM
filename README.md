@@ -12,8 +12,19 @@ El objetivo principal es evaluar el impacto de diferentes subconjuntos de datos 
 
 ## Estructura del repositorio
 TFM/
--------
----
+├── Primera Parte: Exploración Preliminar/
+│ └── [...archivos de exploración y análisis preliminar]
+│
+├── Segunda Parte: Simulacion Controlada/
+│ └── [...scripts y datos simulados con estructura causal]
+│
+├── Tercera Parte: Aplicacion a datos reales/
+│ ├── Datos_ROSMAP/ # Datos procesados reales (ROSMAP)
+│ ├── Scripts para entrenamiento/ # Scripts R usados para el modelado y análisis
+│ ├── TFM_DatosReales.Rmd # Informe en RMarkdown
+│ └── TFM_DatosReales.html # Informe exportado en HTML
+│
+├── README.md # Documento actual
 
 ## Tecnologías y herramientas utilizadas
 
