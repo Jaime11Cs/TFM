@@ -1,0 +1,478 @@
+---
+title: "TFM Boceto"
+author: "Jaime Carreto Sánchez (jaime.carretos@um.es)"
+date: "03/03/2025"
+output:
+  html_document:
+    df_print: paged
+    highlight: kate
+    number_sections: true
+    theme: spacelab
+    toc: true
+    toc_float: true
+    css: styles.css
+    keep_md: TRUE
+  pdf_document:
+    toc: true
+subtitle: Máster en Bioinformática, Universidad de Murcia
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, progress = TRUE, verbose = TRUE)
+```
+
+# Introducción
+
+El objetivo de este análisis es construir un modelo predictivo que identifique individuos con riesgo de desarrollar enfermedad coronaria a 10 años vista (`TenYearCHD`) a partir de variables clínicas disponibles en el conjunto de datos del *Framingham Heart Study*. Dado que esta enfermedad tiene un gran impacto en salud pública, identificar a tiempo a personas con riesgo puede ser crucial para aplicar medidas preventivas eficaces.
+
+## Hipótesis de partida
+
+Se espera que algunas variables clínicas como `male`, `age`, `education` y `BMI` tengan un poder descriptivo elevado, ya que actúan como **variables de confusión** (*confounding variables*). Estas son variables que están relacionadas tanto con los predictores como con la variable objetivo, pudiendo interferir en la capacidad del modelo para aprender relaciones verdaderamente causales si no se tienen en cuenta adecuadamente.
+
+## Enfoque metodológico
+
+Para evaluar el impacto de estas **variables de confusión**, se desarrollarán tres modelos de Random Forest utilizando `ranger`:
+
+1. **Modelo M**: solo incluye las variables (`M`), es decir, todas las variables del dataset excluyendo `male`, `age`, `education` y `BMI`. Se espera que este modelo tenga la menor capacidad predictiva, al no incluir las variables clínicas más relevantes.
+
+2. **Modelo MC**: utiliza todas las variables disponibles (`M + C`). Al incorporar las variables de confusión, se espera que mejore sustancialmente el rendimiento del modelo frente al anterior.
+
+3. **Modelo M + always.split(C)**: incluye únicamente las variables `M`, pero forzando que cada una de las variables clínicas (`C`) se utilice como variable de división en los árboles de decisión mediante el parámetro `always.split.variables` del paquete `ranger`. Este parámetro permite que determinadas variables estén siempre disponibles como candidatas a dividir en cada nodo. El objetivo es evaluar si forzar el uso de estas variables críticas permite alcanzar un rendimiento similar (o incluso superior) al modelo MC, reduciendo además la complejidad computacional en escenarios con grandes volúmenes de datos.
+
+Este diseño experimental permitirá evaluar no solo el impacto predictivo de las variables clínicas, sino también el valor práctico del parámetro `always.split.variables` en entornos reales.
+
+
+# Carga de librerías y configuración inicial
+
+```{r}
+library(caret)
+library(lattice)
+library(ggplot2)
+library(doParallel)
+library(dplyr)
+library(pROC)
+library(DMwR)
+```
+
+Defino mi directorio de trabajo:
+
+```{r}
+setwd("~/Escritorio/TFM/Primer_boceto")
+```
+
+Fijo una semilla aleatoria para garantizar la reproducibilidad
+
+```{r}
+set.seed(123)
+```
+
+# Carga y exploración inicial de los datos
+
+```{r}
+mydata <- read.csv("framingham.csv")
+str(mydata)
+```
+El conjunto de datos contiene 4240 observaciones y 16 variables numéricas.
+
+## Tratamiento de valores ausentes
+
+Primero hay que comprobar la presencia de valores ausentes.
+
+```{r}
+colSums(is.na(mydata))
+sum(is.na(mydata))
+```
+
+El Dataset presenta un total de 645 valores ausentes, concentrados especialmente en la variable `glucose`. Dado que eliminar las filas con `NA` supondría perder aproximadamente un 15% de los datos, optamos por imputar los valores ausentes mediante la mediana.
+
+```{r}
+preproc <- preProcess(mydata, method= "medianImpute")
+mydata_imputado <- predict(preproc, newdata= mydata)
+```
+
+Ahora verifico que la imputación se ha realizado de manera efectiva
+
+```{r}
+sum(is.na(mydata_imputado))
+```
+
+Como se observa, el número de `NA` ahora es 0, por lo que la imputación se ha realizado de manera correcta.
+
+## Preparación de los conjuntos de datos
+
+Primero convierto la variable objetivo `TenYearCHD` en un factor
+
+```{r}
+mydata_imputado$TenYearCHD <- factor(mydata_imputado$TenYearCHD, levels = c(0, 1), labels = c("No", "Yes"))
+table(mydata_imputado$TenYearCHD)
+```
+
+La variable a predecir `TenYearCHD` está muy desiquilibrada. El 85% de los datos representa la clase `No` mientras que el 15% restante es el `Sí` por lo tanto antes de entrenar los modelos habrá que hacer un downsampling de la clase mayoritaria para que el modelo aprenda de forma óptima.
+
+Definimos los grupos de variables
+
+```{r}
+clase <- "TenYearCHD"
+vars_C <- c("male", "age", "education", "BMI")
+vars_M <- setdiff(names(mydata_imputado), c(vars_C, clase))
+```
+
+Ahora creo los diferentes Datasets y les añado la variable clase
+
+```{r}
+M <- mydata_imputado[,vars_M]
+C <- mydata_imputado[,vars_C]
+Y <- mydata_imputado[,clase]
+
+df_M <- cbind(M, TenYearCHD= Y)
+df_MC <- cbind(M, C, TenYearCHD= Y)
+df_C <- cbind(C)
+```
+
+# Modelos Random Forest
+
+Una vez echo todo el preprocesamiento de los datos, voy a pasar a entrenar los diferentes modelos.
+
+## Modelo Random Forest con la matriz M
+
+Primero divido los datos en entrenamiento y test:
+
+```{r}
+train_index <- createDataPartition(df_M$TenYearCHD, p=0.8, list=FALSE)
+train_dataM <- df_M[train_index,]
+test_dataM <- df_M[-train_index,]
+```
+
+Ahora como he explicado antes para que el entrenamiento del modelo se haga de manera adecuada voy a a balancear los datos usando la función `downsSample` disponible en `caret`.
+
+```{r}
+train_dataM <- downSample(
+  x=train_dataM[, -ncol(train_dataM)],
+  y= train_dataM$TenYearCHD,
+  yname= "TenYearCHD"
+)
+table(train_dataM$TenYearCHD)
+```
+
+Como se observa el Downsampling se ha aplicado correctamente y ya tenemos los dos valores de la variable clase ajustados y listos para el entrenamiento. Procedo a entrenar el modelo.
+
+```{r}
+tune_grid <- expand.grid(
+  mtry = c(1,2,4,8,11),
+  splitrule = "gini",
+  min.node.size = c(10, 20, 30)
+)
+
+control <- trainControl(
+  method = "cv",
+  number = 10,
+  verboseIter = FALSE)
+
+modelo_M <- train(
+  TenYearCHD ~ .,
+  data = train_dataM,
+  method = "ranger",
+  tuneGrid = tune_grid,
+  metric = "Accuracy",
+  trControl = control,
+  max.depth=10
+)
+```
+
+## Modelo Random Forest con la matriz MC
+
+Divido los datos en entrenamiento y test
+
+```{r}
+train_index <- createDataPartition(df_MC$TenYearCHD, p= 0.8, list = FALSE)
+train_dataMC <- df_MC[train_index,]
+test_dataMC <- df_MC[-train_index,]
+```
+
+Una vez divididos hago el balanceo de la variable clase
+
+```{r}
+train_dataMC <- downSample(
+  x=train_dataMC[, -ncol(train_dataMC)],
+  y= train_dataMC$TenYearCHD,
+  yname= "TenYearCHD"
+)
+table(train_dataMC$TenYearCHD)
+```
+Como se observa, el downsampling se ha realizado de manera correcta.
+
+```{r}
+tune_grid <- expand.grid(
+  mtry = c(1,2,4,8,11),
+  splitrule = "gini",
+  min.node.size = c(10, 20, 30)
+)
+
+control <- trainControl(
+  method = "cv",
+  number = 10,
+  verboseIter = FALSE)
+
+modelo_MC <- train(
+  TenYearCHD ~ .,
+  data = train_dataMC,
+  method = "ranger",
+  tuneGrid = tune_grid,
+  metric = "Accuracy",
+  trControl = control,
+  max.depth=10
+)
+```
+
+
+## Modelo de Random Forest usando `always.split.variables`
+
+```{r}
+dataset_con_split <- list()
+
+for (var_c in vars_C) {
+  df_tmp <- cbind(
+    M,
+    var_c_value = mydata_imputado[[var_c]],
+    TenYearCHD = mydata_imputado$TenYearCHD
+  )
+  colnames(df_tmp)[ncol(df_tmp)-1] <- var_c
+  
+  train_tmp <- df_tmp[train_index,]
+  test_tmp <- df_tmp[-train_index,]
+  
+  train_tmp <- downSample(
+    x= train_tmp[, -ncol(train_tmp)],
+    y= train_tmp$TenYearCHD,
+    yname = "TenYearCHD"
+  )
+  
+  dataset_con_split[[var_c]] <- list(
+    train= train_tmp,
+    test= test_tmp
+  )
+}
+table(train_tmp$TenYearCHD)
+```
+
+Como se observa, el balanceo se ha realizado de manera correcta. Ahora voy a pasar a entrenar al modelo.
+
+```{r}
+tune_grid <- expand.grid(
+  mtry = c(1,2,4,8,11),
+  splitrule = "gini",
+  min.node.size = c(10, 20, 30)
+)
+
+control <- trainControl(
+  method = "cv",
+  number = 10,
+  verboseIter = FALSE)
+
+modelo_split <- list()
+for (var_c in names(dataset_con_split)){
+
+  modeloSplit <- train (
+    TenYearCHD ~ .,
+    data = dataset_con_split[[var_c]]$train,
+    method="ranger",
+    tuneGrid=tune_grid,
+    trControl=control,
+    metric="Accuracy",
+    max.depth=10,
+    always.split.variables= var_c
+  )
+  
+modelo_split[[var_c]] <- modeloSplit
+}
+```
+
+# Resultados de los Modelos
+
+## Resultados RF con Dataframe M
+
+Imprimo los resultados del entrenamiento del modelo junto con los mejores hiperparámetros
+
+```{r}
+modelo_M$results
+modelo_M$bestTune
+```
+
+Obtengo que los hiperparámetros que mejor resultado dan son `mtry`= 1 y `min.node.size`=30. Voy a probar con los datos de test con este modelo.
+
+```{r}
+pred_M <- predict(modelo_M, newdata = test_dataM)
+conf_M <- confusionMatrix(pred_M, test_dataM$TenYearCHD)
+```
+
+Ahora observo los resultados de la matriz de confusión
+
+```{r}
+print(conf_M)
+```
+## Resultados RF con Dataframe MC
+
+```{r}
+modelo_MC$results
+modelo_MC$bestTune
+```
+
+Como se observa los resultados mejoran ligeramente frente al modelo que usa el dataset M como es lógico, aún así está mejora no es muy sustancial. Voy a comprobar los resultados con los datos de test.
+
+```{r}
+pred_MC <- predict(modelo_MC, newdata = test_dataMC)
+conf_MC <- confusionMatrix(pred_MC, test_dataMC$TenYearCHD)
+```
+
+```{r}
+print(conf_MC)
+```
+
+## Resultados RF con `always.split.variables`
+
+Primero voy a organizar los resultados de los 4 modelos en un mismo Dataframe para verlos mucho más claros
+
+```{r}
+resumen_modelos_split <- lapply(names(modelo_split), function(var_name) {
+  modelo <- modelo_split[[var_name]]
+  
+  best <- modelo$results %>%
+    filter(mtry == modelo$bestTune$mtry,
+           min.node.size == modelo$bestTune$min.node.size)
+  
+  data.frame(
+    variable_clinica = var_name,
+    mtry = modelo$bestTune$mtry,
+    min_node_size = modelo$bestTune$min.node.size,
+    Accuracy = round(best$Accuracy, 4),
+    Kappa = round(best$Kappa,4)
+  )
+}) %>% bind_rows()
+
+resumen_modelos_split <- resumen_modelos_split %>% arrange(desc(Accuracy))
+```
+
+Ahora imprimo por pantalla los resultados organizados
+
+```{r}
+print(resumen_modelos_split)
+```
+
+En los resultados vemos los mejores hiperparámetros para cada una de las variables clínicas junto con sus métricas. La mejor variable es `education` con un `mtry` = 1 y un `min.node.size` de 20. La variable menos explictiva de todas es `male`.
+
+A pesar de que education es claramente la mejor voy a probar a a predecir sobre los datos de test usando todas las variables para ver como varía el rendimiento de cada una.
+
+Voy a ir en orden respecto a la tabla de resultados, primero para la variable `education` luego para `age`, `BMI` y `male`.
+
+```{r}
+pred_education <- predict(modelo_split[["education"]], newdata = dataset_con_split[["education"]]$test)
+
+conf_education <- confusionMatrix(data = pred_education, reference = dataset_con_split[["education"]]$test$TenYearCHD)
+print(conf_education)
+```
+
+```{r}
+pred_age <- predict(modelo_split[["age"]], newdata = dataset_con_split[["age"]]$test)
+conf_age <- confusionMatrix(data = pred_age, reference = dataset_con_split[["age"]]$test$TenYearCHD)
+
+print(conf_age)
+```
+
+```{r}
+pred_BMI <- predict(modelo_split[["BMI"]], newdata = dataset_con_split[["BMI"]]$test)
+
+conf_BMI <- confusionMatrix(data = pred_BMI, reference = dataset_con_split[["BMI"]]$test$TenYearCHD)
+print(conf_BMI)
+```
+
+```{r}
+pred_male <- predict(modelo_split[["male"]], newdata = dataset_con_split[["male"]]$test)
+
+conf_male <- confusionMatrix(data = pred_male, reference = dataset_con_split[["male"]]$test$TenYearCHD)
+print(conf_male)
+```
+
+## Discusión de los resultados
+
+Lo primero que hay que tener en cuenta a la hora de interpretar los resultados es el fuerte desbalance de la variable clase, con una proporción aproximada del 85% de individuos sin enfermedad frente al 15% con enfermedad. Este desbalance afecta a métricas como la `Accuracy`, que puede resultar engañosa al estar dominada por la clase mayoritaria y no reflejar la verdadera capacidad del modelo para identificar correctamente a los casos positivos. 
+
+Por ello, además de aplicar un balanceo en los datos de entrenamiento mediante *downsampling*, se priorizó el uso de métricas más informativas como la `Balanced Accuracy` y la `Sensitivity`, especialmente relevantes en contextos clínicos donde es crucial no pasar por alto casos en riesgo.
+
+### Modelo M
+
+Este modelo, construido únicamente con variables no clínicas, presenta una:
+
+- `Balanced Accuracy` = 0.60  
+- `Sensitivity` = 0.65  
+- `Specificity` = 0.55  
+
+Muestra un rendimiento limitado: la baja especificidad y la sensibilidad moderada reflejan que el modelo tiene dificultades tanto para identificar individuos en riesgo como para evitar falsos positivos. Esto era esperable al haber excluido variables claves como `age` o `BMI`.
+
+### Modelo MC
+
+El modelo completo, que incluye todas las variables disponibles, alcanza una:
+
+- `Balanced Accuracy` = 0.63  
+- `Sensitivity` = 0.71  
+- `Specificity` = 0.55  
+
+Mejora notablemente respecto al modelo M, especialmente en sensibilidad, lo que sugiere una mejor detección de individuos en riesgo. Sin embargo, la especificidad se mantiene baja, y las pruebas de significación (`P-Value` y `McNemar's Test`) siguen sin mostrar diferencias estadísticamente significativas frente a un clasificador aleatorio. Esto se explica porque el conjunto de test continúa desbalanceado, lo cual limita la capacidad del modelo para generalizar correctamente.
+
+### Modelos con `always.split.variables`
+
+Se entrenaron modelos independientes incluyendo las variables del conjunto M más **una única variable clínica forzada** en los nodos de división mediante el parámetro `always.split.variables`. El objetivo era evaluar si el uso explícito de variables clínicamente relevantes en los splits podía compensar la exclusión del resto de variables clínicas.
+
+#### `education`
+
+- `Balanced Accuracy` = 0.613  
+- `Sensitivity` = 0.70  
+- `Specificity` = 0.52  
+- `Kappa` = 0.15  
+
+El modelo con `education` forzada obtiene un rendimiento muy cercano al modelo MC, especialmente en sensibilidad. Esto sugiere que esta variable captura parte de la información clave para la clasificación, aunque la especificidad sigue siendo moderada y los test de significación no son concluyentes.
+
+#### `age`
+
+- `Balanced Accuracy` = 0.68  
+- `Sensitivity` = 0.64  
+- `Specificity` = 0.72  
+- `Kappa` = 0.21  
+
+Este modelo es el que ofrece **el mejor rendimiento general** de todos los modelos con `always.split.variables`, superando incluso al modelo MC en `Balanced Accuracy`. Aunque su sensibilidad no es la más alta, destaca por su especificidad, lo que implica un buen control de falsos positivos. `age` demuestra ser una variable predictiva crítica por sí sola.
+
+#### `BMI`
+
+- `Balanced Accuracy` = 0.60  
+- `Sensitivity` = 0.57  
+- `Specificity` = 0.63  
+- `Kappa` = 0.11  
+
+El modelo con `BMI` como variable forzada muestra el rendimiento más bajo, igualando al modelo M en `Balanced Accuracy`. Esto sugiere que forzar `BMI` en los splits no mejora la capacidad predictiva del modelo de forma sustancial.
+
+#### `male`
+
+- `Balanced Accuracy` = 0.60  
+- `Sensitivity` = 0.67  
+- `Specificity` = 0.53  
+- `Kappa` = 0.13  
+
+El modelo con `male` forzada obtiene un rendimiento muy similar al de `BMI`, con sensibilidad aceptable pero sin mejorar la `Balanced Accuracy` frente al modelo M. Esto indica que `male`, en solitario, no aporta suficiente información predictiva.
+
+## Conclusión
+
+A partir de los resultados obtenidos en este análisis, se pueden extraer varias conclusiones clave relacionadas con los objetivos planteados. El principal objetivo era evaluar si forzar la división de nodos en variables clínicas consideradas críticas mediante el parámetro `always.split.variables` podía ofrecer un rendimiento comparable o incluso superior al uso del conjunto completo de variables (`MC`).
+
+Los resultados han demostrado que sí: el modelo con la variable `age` forzada en los splits no solo ha igualado, sino que ha superado al modelo completo en métricas clave como la `Balanced Accuracy`. Este hallazgo es especialmente relevante en el contexto de datasets clínicos complejos y con alta dimensionalidad, ya que permite reducir la carga computacional manteniendo (o incluso mejorando) el rendimiento del modelo. Además, se gana en interpretabilidad, ya que se identifican claramente variables clave que guían las decisiones del modelo.
+
+En definitiva, este estudio pone de manifiesto que el uso del parámetro `always.split.variables` puede ser una estrategia muy útil en determinadas situaciones, especialmente cuando se dispone de conocimiento experto que permite identificar variables con alta capacidad predictiva.
+
+## Limitaciones
+
+A pesar del balanceo de clases en los datos de entrenamiento mediante *downsampling*, el conjunto de test mantuvo un fuerte desbalance, lo que afectó negativamente a las métricas de significación estadística. En todos los modelos, el `P-Value [Acc > NIR]` y el `McNemar's Test` no fueron significativos, lo que sugiere que el rendimiento en test no fue estadísticamente superior a un clasificador aleatorio. Esto limita la validez de las conclusiones desde un punto de vista estadístico riguroso.
+
+Asimismo, el análisis se ha centrado exclusivamente en modelos Random Forest sin comparar con otros algoritmos de clasificación como XGBoost o modelos lineales penalizados, que podrían ofrecer mejoras en precisión o interpretabilidad.
+
+Por último, aunque se ha priorizado el uso de métricas adecuadas como la `Balanced Accuracy` para mitigar los efectos del desbalance, la evaluación podría enriquecerse con otras métricas como F1-score o curvas de precisión-recall, particularmente útiles en contextos clínicos donde el coste de los falsos negativos es elevado.
+
+
+
