@@ -11,14 +11,14 @@ El objetivo principal es evaluar el impacto de diferentes subconjuntos de datos 
 ---
 
 ## Estructura del repositorio
-
+pre> ## Estructura del repositorio ``` TFM/ ├── Primera Parte: Exploración Preliminar/ │ └── [...archivos de exploración y análisis preliminar] │ ├── Segunda Parte: Simulacion Controlada/ │ └── [...scripts y datos simulados con estructura causal] │ ├── Tercera Parte: Aplicacion a datos reales/ │ ├── Datos_ROSMAP/ │ ├── Scripts para entrenamiento/ │ ├── TFM_DatosReales.Rmd │ └── TFM_DatosReales.html │ └── README.md ``` </pre>
 ---
 
 ## Tecnologías y herramientas utilizadas
 
 - Lenguaje: **R**
 - Librerías: `ranger`, `caret`, `clusterProfiler`, `tidyverse`, `ggplot2`, `upSample`, `SMOTE`, etc.
-- Análisis: modelos de clasificación, selección de variables, simulaciones, UMAP, DBSCAN.
+- Análisis: modelos de clasificación, selección de variables, simulaciones, Random Forest.
 - Datos: reales (ROSMAP) y simulados con estructura causal conocida.
 
 ---
