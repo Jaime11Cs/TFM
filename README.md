@@ -31,7 +31,7 @@ TFM/
 
 ## Tecnologías y herramientas utilizadas
 
-- Lenguaje: **R**
+- Lenguaje: **R** y **Python**
 - Librerías: `ranger`, `caret`, `clusterProfiler`, `tidyverse`, `ggplot2`, `upSample`, `SMOTE`, etc.
 - Análisis: modelos de clasificación, selección de variables, simulaciones, Random Forest.
 - Datos: reales (ROSMAP) y simulados con estructura causal conocida.
