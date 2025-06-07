@@ -1,0 +1,1667 @@
+---
+title: "TFM Generando el Dataset"
+author: "Jaime Carreto Sánchez (jaime.carretos@um.es)"
+date: "03/03/2025"
+output:
+  html_document:
+    df_print: paged
+    highlight: kate
+    number_sections: true
+    theme: spacelab
+    toc: true
+    toc_float: true
+    css: styles.css
+    keep_md: TRUE
+  pdf_document:
+    toc: true
+subtitle: Máster en Bioinformática, Universidad de Murcia
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, progress = TRUE, verbose = TRUE)
+```
+
+```{r, print= FALSE}
+library(caret)
+library(lattice)
+library(ggplot2)
+library(doParallel)
+library(dplyr)
+library(pROC)
+library(DMwR2)
+```
+
+Defino mi derectorio de trabajo 
+
+```{r}
+setwd("~/Escritorio/TFM/generando_dataset")
+```
+
+Fijo una semilla para garantizar la reproducibilidad
+
+```{r}
+set.seed(123)
+```
+
+# Introducción
+
+El presente análisis tiene como objetivo evaluar el impacto de variables clínicas potencialmente confusoras sobre la capacidad predictiva de modelos Random Forest en el contexto de una enfermedad simulada (`Alzheimer`). Para ello, se ha simulado un conjunto de datos con estructura casual controladam en el que ciertas variables clínicas (`C`) influyen sobre un subcojunto de genes (`M`), y este a su vez sobre la variable objetivo binaria (`Y`). Además, se han generado genes ruidosos sin relación casual con `C` ni con `Y`, reproduciendo un escenario realista de datos ómicos.
+
+## Especificaciones de los datos simulados
+
+Como he indicado antes, se van a generar 4 variables clínicas (`C`). En el contexto del experimento, `C` actúa como **variables confusoras**. Algunas de ellas afectarán directamente a un subconjunto de genes (`M'`), y otros no tendrán ningun efecto real. Esto nos permite estudiar si el modelo logra distinguir señal de ruido o confusor. Las variables simuladas serán:
+
+- **Edad**: Variable continua normalmente distribuida (media 60, min 40 y max 85).
+
+- **RIN**: Continua (media 6, min 0, max 10).
+
+- **Sexo**: Binaria, simulada a partir de la normal (0,1) con corte en 0.
+
+- **Lote**: Categórica con 4 niveles (simulada con 3 cortes sobre normal).
+
+Luego genero cuatro grupos de genes:
+
+- **Grupo A**: Tendrá 100 genes, con una correlación interna de [0.3, 0.6] y están correlacionados con **edad** (p = 0.4)
+
+- **Grupo B**: Tendrá 200 genes, con una correlación interna del [0.2,0.4] y correlacionados con **sexo** (p = 0.4)
+
+- **Grupo D**: Tiene 300 genes con una correlación interna de [0.2, 0.3] y sin relación con ninguna variable de `C`.
+
+- **Grupo Ruido**: Contiene 400 genes no correlacionados entre sí y tampoco correlacionados con `C`.
+
+Luego por último se encuentra la **variable objetivo Y** que simula si el individuo tiene o no la enfermedad. Esta variable `Y` va a depender de:
+
+- Los **genes del grupo A** aunque con poca influencia, correlación del 0.2.
+
+- Los **genes del grupo B**, con una influencia mucho mayor, correlación del 0.5.
+
+- La variable **edad**, con una correlación del 0.3
+
+- La variable **sexo**, con una correlación de 0.1
+
+De esta forma, Y: sera una función de:
+
+- Variables clínicas + genes influenciados por ellas + genes independientes
+
+Así se modela **la confusión real (C → M' → Y)**
+
+# Objetivos
+
+- Simular un conjunto de datos realista con variables clínicas (`C`), genes (`M`) y una variable objetivo (`Y`), controlando sus relaciones causales.
+
+- Evaluar el redimiento de modelos Random Forest entrenados con diferentes subconjuntos de variables:
+  - Solo genes `M`
+  - Genes + clínicas `MC`
+  - Genes informativos `AB`
+  - AB + clínicas `AB + C`
+  - Genes informativos `AB` + D
+  - `ABD` + variables clínicas
+  - Modelos con variables clínicas forzadas en los splits (always.split.variables)
+  
+- Calcular métricas de rendimiento con bootstrapping y comparar modelos mediante intervalos de confianza y sus visualizaciones
+
+- Analizar la importancia de variables en cada modelo, detectando cuáles dominan la toma de decisiones del clasificador.
+
+
+# Preparación de los  datos
+
+Ahora importo el Dataset y veo la estructura de los datos
+
+```{r}
+mydata <- read.csv("datos_simulados.csv")
+str(mydata)
+```
+
+El conjunto de datos contiene 4000 observaciones y 1005 variables, 1000 de estas variables corresponden a los genes , 4  son las **variable clínicas** y la restante es la **variable objetivo** que en este caso es si presenta la enfermedad (`Alzheimer`) o no. 
+
+Voy a comprobar si hay valores ausentes, en tal caso tendría que imputarlos usando la mediana
+
+```{r}
+sum(is.na(mydata))
+```
+
+Como se observa no hay valores ausentes, lo cuál es lógico porque al tratarse de unos datos simulados no va, a tener `NA` a menos que en la propia simulación los incluyamos. Una vez comprobado, paso a la preparación de los distintos conjuntos de datos.
+
+Convierto la variable objetivo `Alzheimer` en un factor
+
+```{r}
+mydata$Alzheimer <- factor(mydata$Alzheimer, levels = c(0,1), labels = c("No", "Yes"))
+table(mydata$Alzheimer)
+```
+
+
+Ahora ya tenemos la variable objetivo convertida a factor y vemos que el número de observaciones está igualada, hay 2000 casos negativos y 2000 casos positivos, esto nos indica que más adelante, a la hora de entrenar los modelos no será necesario balancear los datos de train.
+
+Defino los grupos de variables
+
+```{r}
+clase <- "Alzheimer"
+vars_C <- c("edad", "rin", "sexo", "lote")
+genes_completos <- setdiff(names(mydata), c(vars_C, clase))
+```
+
+Ahora creo los conjuntos de variables y añado la variable clase
+
+```{r}
+M <- mydata[,genes_completos]
+C <- mydata[, vars_C]
+Y <- mydata[, clase]
+
+df_M <- cbind(M, Alzheimer = Y)
+df_MC <- cbind(M, C, Alzheimer = Y)
+df_C <- cbind(C, Alzheimer = Y)
+```
+
+Ahora que ya están creados los 3 Dataframes paso al entrenamiento de los modelos.
+
+# Modelos de Random Forest
+## Modelo Ranfom Forest con la matriz M
+
+Primero divido los datos en train y test
+
+```{r}
+train_index <- createDataPartition(df_M$Alzheimer, p=0.8, list = FALSE)
+train_dataM <- df_M[train_index,]
+test_dataM <- df_M[-train_index,]
+```
+
+Ahora entrenos los modelos y optimizo los hiperparámetros para luego entrenar el modelo con `Boostraping`. También defino `Balanced Accuracy` como métrica principal.
+
+```{r}
+balancedAccuracySummary <- function(data, lev = NULL, model = NULL) {
+  cm <- confusionMatrix(data$pred, data$obs)
+  bal_acc <- cm$byClass["Balanced Accuracy"]
+  out <- c(BalancedAccuracy = bal_acc)
+  return(out)
+}
+```
+
+
+```{r}
+tune_grid <- expand.grid(
+  mtry = c(20, 30, 50, 70),
+  splitrule = "gini",
+  min.node.size = c(5,10,20,30)
+)
+
+control_cv <- trainControl(
+  method = "cv",
+  number = 5,
+  classProbs = TRUE,
+  summaryFunction = balancedAccuracySummary
+)
+
+modelo_cv_M <- train(
+  Alzheimer ~.,
+  data = train_dataM,
+  method= "ranger",
+  tuneGrid = tune_grid,
+  metric = "BalanceAccuracy",
+  trControl= control_cv,
+  max.depth= 10,
+  importance= "impurity"
+)
+```
+
+En el código anterior optimizo los hiperparámetros usando un **Cross validation de 5**. Eligo la mejor combinación de hiperparámetros en base a la `BalancedAccuracy`.
+
+Ahora extraigo la mejor combinación de hiperparámetros
+
+```{r}
+mejores_hiperparametros <- modelo_cv_M$bestTune
+print(mejores_hiperparametros)
+```
+
+Ahora entreno con **bootstrap = 15**. El **Boostraping**  es una técnica de remuestreo utilizada para evaluar el rendimiento de los modelos predictivos. Se basa en la idea de crear múltiples subconjuntos de datos de entrenamiento selecccionando muestras **con reemplazo**, es decir, permitiendo que una misma observación aparezca varias veces en un mismo conjunto.
+
+```{r}
+control_boot <- trainControl(
+  method= "boot",
+  number = 15,
+  classProbs= TRUE,
+  summaryFunction = balancedAccuracySummary
+)
+
+modelo_bootM <- train(
+  Alzheimer~.,
+  data = train_dataM,
+  method = "ranger",
+  tuneGrid = mejores_hiperparametros,
+  metric= "BalancedAccuracy",
+  trControl= control_boot
+)
+```
+
+### Resultados
+
+Ahora extraigo el rendimiento final del modelo
+
+```{r}
+resultado_boot <- modelo_bootM$resample
+media <- mean(resultado_boot$BalancedAccuracy)
+ic <- quantile(resultado_boot$BalancedAccuracy, probs = c(0.025, 0.975))
+
+cat("Media Balanced Accuracy:", round(media, 3), "\n")
+cat( "IC 95%:", round(ic[1], 3), '-', round(ic[2], 3), '\n')
+```
+
+La **Media de Balanced Accuracy** = 0.844, lo que significa que en promedio, el modelo tiene un rendimiento bastante equilibrado. Un valor de **0.844** indica que el modelo generaliza bien, con un rendimiento muy superior al azar (0.5) y tambień superior a lo que sería considerado clínicamente útil (> 0.80).
+
+El **Intervalo de confianza** da un resultado de [0.828-0.863], lo que indica que en el caso de repetir el proceso de entrenamiento y testeo múltiples veces con muestras similares, el 95% de las veces el modelo tendría un `Balanced Accuracy` de entre **0.828 y 0.863**. Esto permite asegurar que:
+
+  - **El rendimiento no es un artefacto de un solo split de los datos**
+  - El modelo es **estable y robusto** a la variabilidad
+  
+Cuanto más estrecho el intervalo, más confiable es el rendimiento. En este caso es bastante aceptable y el rango es alto en ambos extremos.
+
+En conclusión, el modelo entrenado sobre este conjunto de datos logra una muy buena capacidad de discriminación entre clases, a pesar de que a priori al no tener las variables clínicas `C` debería ser el peor de los modelos. Voy a pasar a entrenar los otros modelos, ya sí con las variables clínicas y a comparar los resultados, para dilucidar si las variables clínicas ayudan a la eficacia del modelo.
+
+```{r}
+var_imp <- varImp(modelo_cv_M, scale = FALSE)
+top_vars <- var_imp$importance %>%
+  tibble::rownames_to_column("Variable") %>%
+  dplyr::arrange(desc(Overall)) %>%
+  dplyr::slice(1:20)
+
+ggplot(top_vars, aes(x = reorder(Variable, Overall), y = Overall)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Top 20 variables más importantes",
+       y = "Importancia",
+       x= "Variable") +
+  theme_minimal()
+```
+
+El gráfico anterior nos permite ver claramente cuales son los genes más influyentes en el modelo `M`, que **no incluye las variables clínicas**.
+
+-**Dominancia de ciertos genes**: Genes como `B_gene176`, `B_gene197` o `B_gene59` presentan una **importancia superior** al resto, lo que indica que el modelo se apoya más en ellos para tomar decisiones. Esto sugiere que están fuertemente asociados con la variable objetivo `Alzheimer`, o al menos con las estructuras latentes que la modelan.
+
+-**Presencia de genes del grupo B**: Es intersante observar como la mayoría de los genes más importantes pertenecen al **grupo B**  (genes relacionados con sexo), solo unas pocas de las variables más importantes pertenecen al **grupo A** (`A_gene75`). Esto es lo esperado, porque mientras los **genes del grupo A** tienen una correlación con la variable objetivo de 0.2, los **genes del grupo B** tienen una correlación mucho más alta, del 0.5, por lo tanto, es normal que aparezcan en mayor proporción entre las variables más importantes del modelo. Además, esto puede indicar que el modelo, sin tener acceso a las variables clínicas, **reconoce su señal indirectamente a través de la expresión génica**.
+
+-**Importancia distribuida**: Aunque unos pocos genes sobresalen, la **caída en la importancia es progresiva**, lo cual es típico en Random Forest cuando no hay una única variable dominante pero sí varias relevantes que trabajan en conjunto.
+
+Aunque este modelo `M` no utiliza variables clínicas como `edad` o `sexo`, el hecho de que genes altamente relacionados con ellas aparezcan como importantes **confirma el efecto confusor** que se quería modelar: las variables clínicas influyen en la expresión de ciertos genes, y estos genes terminan siendo los que el modelo utiliza para predecir Alzheimer.
+
+## Modelo Random Forest con la matriz MC
+
+Divido en train y test
+
+```{r}
+train_index <- createDataPartition(df_MC$Alzheimer, p=0.8, list = FALSE)
+train_dataMC <- df_MC[train_index,]
+test_dataMC <- df_MC[-train_index,]
+```
+
+Ahora entrenos los modelos y optimizo los hiperparámetros para luego entrenar el modelo con `Boostraping`
+
+```{r}
+tune_grid <- expand.grid(
+  mtry = c(20, 30, 50, 70),
+  splitrule = "gini",
+  min.node.size = c(5,10,20,30)
+)
+
+control_cv <- trainControl(
+  method = "cv",
+  number = 5,
+  classProbs = TRUE,
+  summaryFunction = balancedAccuracySummary
+)
+
+modelo_cv_MC <- train(
+  Alzheimer ~.,
+  data = train_dataMC,
+  method= "ranger",
+  tuneGrid = tune_grid,
+  metric = "BalanceAccuracy",
+  trControl= control_cv,
+  max.depth= 10,
+  importance= "impurity"
+)
+```
+
+Ahora extraigo la mejor combinación de hiperparámetros
+
+```{r}
+mejores_hiperparametros <- modelo_cv_MC$bestTune
+print(mejores_hiperparametros)
+```
+
+Ahora entreno con **bootstrap = 15**
+
+```{r}
+control_boot <- trainControl(
+  method= "boot",
+  number = 15,
+  classProbs= TRUE,
+  summaryFunction = balancedAccuracySummary
+)
+
+modelo_bootMC <- train(
+  Alzheimer~.,
+  data = train_dataMC,
+  method = "ranger",
+  tuneGrid = mejores_hiperparametros,
+  metric= "BalancedAccuracy",
+  trControl= control_boot
+)
+```
+
+### Resultados
+
+Ahora extraigo el rendimiento final del modelo
+
+```{r}
+resultado_boot <- modelo_bootMC$resample
+media <- mean(resultado_boot$BalancedAccuracy)
+ic <- quantile(resultado_boot$BalancedAccuracy, probs = c(0.025, 0.975))
+
+cat("Media Balanced Accuracy:", round(media, 3), "\n")
+cat( "IC 95%:", round(ic[1], 3), '-', round(ic[2], 3), '\n')
+```
+
+El **aumento en la Balaced Accuracy** de 0.844 a 0.908 refleja que el modelo MC **aprende mejor la estructura subyacente del problema**.
+
+**El intervalo de confianza más alto** [0.893, 0.923], indica una mayor **robustez** del modelo MC frente a variabilidad en el muestreo.
+
+En el diseño del experimento hemos simulado que `C` afecta a `M'` y también a `Y`, lo cual induce un posible **sesgo de confusión** si `C` no se controla correctamente. Al incluir `C`, el modelo **aprovecha esta información directa** y mejora su capacidad para predecir `Y`. 
+
+Esto sugiere que, en escenarios reales, **excluir variables clínicamente relevantes podría reducir considerablemente la capacidad predictiva**. Sin embargo, también nos obliga a **cuantificar el riesgo de confusión**: ¿Estamos mejorando porque realmente hay una relación causal o por una asociación espuria? Esto se explorará ahora con `always.split.variables`.
+
+```{r}
+var_imp <- varImp(modelo_cv_MC, scale = FALSE)
+top_vars <- var_imp$importance %>%
+  tibble::rownames_to_column("Variable") %>%
+  dplyr::arrange(desc(Overall)) %>%
+  dplyr::slice(1:20)
+
+ggplot(top_vars, aes(x = reorder(Variable, Overall), y = Overall)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Top 20 variables más importantes",
+       y = "Importancia",
+       x= "Variable") +
+  theme_minimal()
+```
+
+El gráfico anterior nos permite ver la importancia de las variables del modelo `MC`.
+
+  - **Dominancia de las variables clínicas**: La variable `edad` aparece con una **importancia desproporcionadamente alta**, seguida de `sexo`, con una importancia bastante menor en comparación con `sexo`. Esto confirma que el modelo **prioriza completamente la señal directa** proveniente de las variables clínicas para predecir la enfermedad, desplazando la importancia de los genes.
+  
+  - **Genes relevantes aún presentes**: A pesar de que `edad` y `sexo` acaparan la mayor parte de la importancia, genes como `B_gene197`, `B_gene176`, `B_gene59` o `B_gene51` siguen figurando entre los más importantes. Muchos de ellos también aparecían en el top del modelo `M`, lo que **valida su rol predictivo**, incluso cuando las variables clínicas están disponibles. Al igual que antes aparecen muchos más genes del **grupo B** que del **grupo A**.
+  
+- **Confirmación de estructura casual**: Este comportamiento era de esperar porque, en la simulación `edad` y `sexo` **afectaban directamente** tanto a los genes como a la variable objetivo. La alta importancia de estas variables sugiere que el modelo capta perfectamente esas rutas causales simuladas **(C → M’ → Y, C → Y)**.
+
+Por tanto, el **modelo MC**, al tener acceso explícito a la información completa **no necesita depender tanto de los genes**, y recurre directamente a `edad` y `sexo` como predictores dominantes. Cabe destacar que ni `rin` ni `lote` aparecen, como es lógico, ya que según la simulación, no se relacionan ni con los genes ni con la variable objetivo `Y`.
+  
+## Modelo RF con `always.split.variables` 
+
+Lo primero es dividir el Datasets en datos de train y test
+
+```{r}
+dataset_con_split <- list()
+
+for (var_c in vars_C) {
+  df_tmp <- cbind(
+    M,
+    var_c_value = mydata[[var_c]],
+    Alzheimer = mydata$Alzheimer
+  )
+colnames(df_tmp)[ncol(df_tmp)-1] <- var_c
+
+train_tmp <- df_tmp[train_index,]
+test_tmp <- df_tmp[-train_index,]
+
+dataset_con_split[[var_c]] <- list(
+  train = train_tmp,
+  test = test_tmp
+)
+}
+```
+
+Ahora, paso con el entrenamiento de los modelos
+
+```{r}
+tune_grid <- expand.grid(
+  mtry = c(20, 30, 50, 70),
+  splitrule = "gini",
+  min.node.size = c(5,10,20,30)
+)
+
+control_cv <- trainControl(
+  method = "cv",
+  number = 5,
+  classProbs = TRUE,
+  summaryFunction = balancedAccuracySummary
+)
+
+modelo_split <- list()
+for (var_c in names(dataset_con_split)) {
+  modeloSplit <- train (
+    Alzheimer ~.,
+    data = dataset_con_split[[var_c]]$train,
+    method= "ranger",
+    tuneGrid = tune_grid,
+    metric = "BalancedAccuracy",
+    trControl= control_cv,
+    max.depth= 10,
+    importance= "impurity",
+    always.split.variables = var_c
+  )
+modelo_split[[var_c]] <- modeloSplit
+}
+```
+
+Organizo las métricas para obtener los mejores hiperparámetros para cada variable, los mejores hiperparámetros los usaré para entrenar con **Boostraping = 15**
+
+```{r}
+resumen_modelos_split <- lapply(names(modelo_split), function(var_name) {
+  modelo <- modelo_split[[var_name]]
+  
+  best <- modelo$results %>%
+    filter(mtry == modelo$bestTune$mtry,
+           min.node.size == modelo$bestTune$min.node.size)
+  
+  data.frame(
+    variable_clinica = var_name,
+    mtry = modelo$bestTune$mtry,
+    min_node_size = modelo$bestTune$min.node.size,
+    BalancedAccuracy = round(best[["BalancedAccuracy.Balanced Accuracy"]], 4)
+  )
+}) %>% bind_rows()
+print(resumen_modelos_split)
+```
+
+En la tabla enterior se muestran los mejores hiperparámetros para cada variable clínicas `C`. Ahora entrenamos con **Botstrapping** con los mejores parámetros seleccionados para cada vairbale clínica.
+
+```{r}
+resultados_boot_split <- list()
+
+for (var_c in names(modelo_split)) {
+  data_train <- dataset_con_split[[var_c]]$train
+  best <- modelo_split[[var_c]]$bestTune
+  
+  control_boot <- trainControl(
+    method = "boot",
+    number = 15,
+    classProbs = TRUE,
+    summaryFunction = balancedAccuracySummary
+  )
+  
+  modelo_boot <- train(
+    Alzheimer ~ .,
+    data = data_train,
+    method = "ranger",
+    tuneGrid = best,
+    metric = "BalancedAccuracy",
+    trControl = control_boot,
+    max.depth = 10,
+    importance = "impurity",
+    always.split.variables = var_c
+  )
+  
+  resultados_boot_split[[var_c]] <- modelo_boot
+}
+```
+
+### Resultados
+
+Ahora extraigo el rendimiento del modelo para cada variable.
+
+```{r}
+for (var_c in names(modelo_split)) {
+  cat("Variable forzada:", var_c, "\n")
+  resultado_boot <- modelo_split[[var_c]]$resample
+  resultado_boot$Variable <- var_c
+  resultados_boot_split[[var_c]] <- resultado_boot
+  
+  media <- mean(resultado_boot$BalancedAccuracy, na.rm = TRUE)
+  ic <- quantile(resultado_boot$BalancedAccuracy, probs = c(0.025, 0.975), na.rm = TRUE)
+  
+  cat("  → Media Balanced Accuracy:", round(media, 3), "\n")
+  cat("  → IC 95%:", round(ic[1], 3), "-", round(ic[2], 3), "\n\n")
+}
+```
+
+#### **Edad**
+- Tiene una **media de Balanced Accuracy de 0.914**, con un **IC del 95%: (0.893–0.927)**.
+- Es el **mejor resultado** entre todos los modelos con variables forzadas.  
+- En la simulación, la **edad influye directamente** sobre el grupo de genes **A (100 genes)** y **también sobre la variable Y (Alzheimer)** con un peso de 0.3.  
+- Por tanto, es una **variable altamente informativa**, y forzarla mejora la capacidad del modelo para hacer buenas particiones.
+
+#### **RIN**
+- Balanced Accuracy de **0.848**, con **IC 95%: (0.837–0.858)**  
+- Esta variable **no se usó** para generar ni M ni Y.  
+- Su buen rendimiento puede deberse a:
+  - **Coincidencia o ruido estructurado**
+  - **Correlación indirecta** con variables relevantes
+  - Algún **patrón aleatorio captado por el modelo**
+
+#### **Sexo**
+- Balanced Accuracy: **0.833**, IC 95%: **(0.819–0.848)**  
+- En la simulación, el **sexo influye sobre el grupo B** de genes (200 genes) y **también sobre Y**, con un peso de 0.1.  
+- Aunque tiene menor impacto que la edad, sigue siendo una variable **moderadamente informativa**.
+
+#### **Lote**
+- Balanced Accuracy: **0.849**, IC 95%: **(0.829–0.862)**  
+- Al igual que RIN, **lote no fue utilizado directamente** en la simulación.  
+- Un rendimiento tan alto podría deberse a:
+  - **Correlación espuria**
+  - **Desbalance de lotes entre clases**
+  - **Ruido estructurado** que el modelo ha aprendido a explotar
+
+Las variables **realmente implicadas en la simulación (edad y sexo)** generan modelos con buen rendimiento, y **edad**, al tener más peso, logra el mejor resultado
+
+Los buenos resultados de **rin y lote**, que superan incluso a los de la variable `sexo`, que no deberían aportar información directa deberían **hacer sospechar o analizar más a fondo** si hay correlaciones indirectas o estructuras en los datos que el modelo está aprovechado. 
+
+```{r}
+top_importancias <- lapply(names(modelo_split), function(var_c) {
+  imp <- varImp(modelo_split[[var_c]], scale = FALSE)$importance
+  imp$Variable <- rownames(imp)
+  imp$Split <- var_c
+  imp <- imp %>% arrange(desc(Overall)) %>% head(20)
+  return(imp)
+}) %>% bind_rows()
+
+variables_forzadas <- unique(top_importancias$Split)
+
+for (var in variables_forzadas) {
+  df_plot <- top_importancias %>% filter(Split == var)
+  
+  p <- ggplot(df_plot, aes(x = reorder(Variable, Overall), y = Overall)) +
+    geom_bar(stat = "identity", fill = "steelblue") +
+    coord_flip() +
+    theme_minimal() +
+    labs(title = paste("Top 20 variables más importantes -", var),
+         x = "Variable", y = "Importancia")
+  
+  print(p)  
+}
+
+```
+
+- **Edad**: En el gráfico del modelo con la variable `edad` forzada, observamos que **edad domina claramente** la importancia del modelo. Su valor de importancia es muy superior al resto de variables, lo que tiene sentido ya que al estar forzada y además estar casualmente relacionada con muchos genes y con la variable objetivo `Y`, **su influencia ha sido maximizado** por el modelo. También aparecen varios genes informativos `B_gene176`, `B_gene_21`, `B_gene59` y `B_gene197` como importantes, lo cuál indica que la señal real aún se preserva.
+
+- **RIN** En el modelo con `rin` forzado, vemos un patron completamente distinto. **La variable forzada no aparece como una de las más importantes**. Esto es coherente, ya que `rin` no tiene ninguna relación casual con los genes ni con la enfermedad. En su lugar, los genes de los grupo informativo (A pero sobretodo B) son los que dominan la importancia, reflejando que el modelo prioriza correctamente la señal útil, a pesar de haber obligado a considerar `rin` en los splits.
+
+- **Sexo** Aquí, al igual que con `edad`, obsservamos que la variable forzada es la más importante. Aunque no tanto como `edad`, su peso es elevado, lo cuál tiene sentido porque **sexo influye casualmente sobre los genes del grupo B**, y además **tiene cierta correlación directa con Y**. Este resultado sugiere que el modelo aprovecha esa relación estructural y le da un peso justificado.
+
+- **Lote** En el gráfico `lote`, la variable forzada **no aparece entre las más importantes**, lo que indica que el modelo no le asigna peso relevante a pesar de haberla considerado en cada división del arbol. Esto es un buena señal, ya que `lote` **es una variable irrelevante en este contexto**, y el modelo, aunque obligado a considerarla, no ha caído en el error de sobrevalorarla.
+
+Estos cuatros plots ilustran claramente cómo el parámetro `always.split.variables`no garantiza que la variable sea importante. **Su importancia dependerá de la estructura causal del problema**. Si la variable está implicada en la generación de los datos, será relevantes; si no, el modelo tenderá a ignorarla. Este comportamiento muestra que `Random Forest` es robusto, pero también que **forzar variables puede tener efectos no triviales** sobre la interpretación del modelo.
+
+# Segunda Parte. Solo con los grupos de genes A y B (informativos)
+
+Ahora vamos a repetir los mismos pasos de antes, pero con solo los genes de los grupos `A` (correlacionados con edad) y `B` (correlacionados con sexo). Por tanto, lo primero que se hace es definir el conjunto `AB`
+
+```{r}
+genesA <- paste0("A_gene", 1:100)
+genesB <- paste0("B_gene", 1:200)
+vars_AB <- c(genesA, genesB)
+
+AB <- mydata[, c(vars_AB, "Alzheimer")]
+AB_C <- cbind(AB[, -ncol(AB)], mydata[, vars_C], Alzheimer = AB$Alzheimer)
+```
+
+## Entrenamiento RF con solo AB
+
+Genero los datos de train y test
+
+```{r}
+train_dataAB <- AB[train_index,]
+test_dataAB <- AB[-train_index,]
+```
+
+Ahora entreno el modelo `AB`con hiperparámetros optimizados y bootstrapping
+
+```{r}
+tune_grid <- expand.grid(
+  mtry = c(20, 30, 50, 70),
+  splitrule = "gini",
+  min.node.size = c(5,10,20,30)
+)
+
+control_cv <- trainControl(
+  method = "cv",
+  number = 5,
+  classProbs = TRUE,
+  summaryFunction = balancedAccuracySummary
+)
+
+modelo_cv_AB <- train(
+  Alzheimer ~.,
+  data = train_dataAB,
+  method= "ranger",
+  tuneGrid = tune_grid,
+  metric = "BalanceAccuracy",
+  trControl= control_cv,
+  max.depth= 10,
+  importance= "impurity"
+)
+```
+
+Obtengo la mejor combinación de hiperparámetros
+
+```{r}
+mejores_hiperparametros <- modelo_cv_AB$bestTune
+print(mejores_hiperparametros)
+```
+
+Ahora entreno con **bootstrap = 15**
+
+```{r}
+control_boot <- trainControl(
+  method= "boot",
+  number = 15,
+  classProbs= TRUE,
+  summaryFunction = balancedAccuracySummary
+)
+
+modelo_bootAB <- train(
+  Alzheimer~.,
+  data = train_dataAB,
+  method = "ranger",
+  tuneGrid = mejores_hiperparametros,
+  metric= "BalancedAccuracy",
+  trControl= control_boot
+)
+```
+
+Extraigo las métricas de los resultados:
+
+```{r}
+resultado_bootAB <- modelo_bootAB$resample
+media_AB <- mean(resultado_bootAB$BalancedAccuracy)
+ic_AB <- quantile(resultado_bootAB$BalancedAccuracy, probs = c(0.025, 0.975))
+
+cat("Balanced Accuracy AB:", round(media_AB, 3), "\n")
+cat("IC 95%:", round(ic_AB[1], 3), "-", round(ic_AB[2], 3), "\n")
+```
+
+Este modelo usa únicamente los genes que, por construcción del dataset, **realmente influyen en la variable objetivo** `Alzheimer`. Por tanto, se espera un rendimiento elevado y estable, y efectivamente lo consigue:
+
+- La Balanced Accuracy es alto, y comparable a la del modelo `M`, aunque lejana a la del modelo `MC` que usaba todas las variables
+- El intervalo de confianza es **estrecho**, lo que indica que el modelo es **estable y consistente** bajo re-muestreo
+- El modelo **no se ve afectado por ruido ni confusión de variable clínicas**, ya que únicamente entrena con los genes relevantes.
+  
+Este resultado sirve como **upper bound interpretativo**. Representa el rendimiento alcanzable si solo se pudiera usar las variables que de verdad contienen información útil. Comparar otros modelos contra este nos permite ver que tán cerca están del óptimo casual.
+
+
+```{r}
+var_imp <- varImp(modelo_cv_AB, scale = FALSE)
+top_vars <- var_imp$importance %>%
+  tibble::rownames_to_column("Variable") %>%
+  dplyr::arrange(desc(Overall)) %>%
+  dplyr::slice(1:20)
+
+ggplot(top_vars, aes(x = reorder(Variable, Overall), y = Overall)) +
+  geom_col(fill = "darkorange") +
+  coord_flip() +
+  labs(title = "Top 20 variables más importantes",
+       y = "Importancia",
+       x= "Variable") +
+  theme_minimal()
+```
+
+El gráfico muestra la importancia de las variables del modelo entrenado **únicamente con las variables que generan directamente la variable Y**, es decir, los genes de los grupos **A y B** que fueron diseñados para tener correlación con `Alzheimer` y además reflejan la influencia de las variables clínicas `edad` y `sexo`.
+
+- La distribución de importancia está **bastante homogénea entre muchos genes**, sin una dominancia tan clara como en los modelos `MC`o `always.split.variables`.
+
+- La mayoría de las variables más importantes pertenecen a genes del **grupo B**, más concretamente 15 de 20 genes (75%). Este resultado es bastante coherente con la simulación, ya que en esta, a los genes del **grupo B** se les asígnó **mas peso (0.5)** en la creación de la variable `Y` frente a los genes del **grupo A (0.2)**. 
+
+- Los genes más importante son **B_gene59, B_gene176 y B_gene197** , que tienen una importancia bastante mayor que todos los demás genes, a partir de estos tres los valores de importancia bajan de forma importante para ya luego sí desdencer de forma progresiva. 
+
+- Esto indica que el modelo ha captado correctamente que los **genes del grupo B aportan más señal predictiva** sobre la variable Y.
+
+## Modelo RF con AB + C
+
+Genero los datos de train y test
+
+```{r}
+train_dataAB_C <- AB_C[train_index,]
+test_dataAB_C <- AB_C[-train_index,]
+```
+
+Ahora entreno el modelo `AB-C`con hiperparámetros optimizados y bootstrapping
+
+```{r}
+tune_grid <- expand.grid(
+  mtry = c(20, 30, 50, 70),
+  splitrule = "gini",
+  min.node.size = c(5,10,20,30)
+)
+
+control_cv <- trainControl(
+  method = "cv",
+  number = 5,
+  classProbs = TRUE,
+  summaryFunction = balancedAccuracySummary
+)
+
+modelo_cv_AB_C <- train(
+  Alzheimer ~.,
+  data = train_dataAB_C,
+  method= "ranger",
+  tuneGrid = tune_grid,
+  metric = "BalanceAccuracy",
+  trControl= control_cv,
+  max.depth= 10,
+  importance= "impurity"
+)
+```
+
+Obtengo la mejor combinación de hiperparámetros
+
+```{r}
+mejores_hiperparametros <- modelo_cv_AB_C$bestTune
+print(mejores_hiperparametros)
+```
+
+Ahora entreno con **bootstrap = 15**
+
+```{r}
+control_boot <- trainControl(
+  method= "boot",
+  number = 15,
+  classProbs= TRUE,
+  summaryFunction = balancedAccuracySummary
+)
+
+modelo_bootAB_C <- train(
+  Alzheimer~.,
+  data = train_dataAB_C,
+  method = "ranger",
+  tuneGrid = mejores_hiperparametros,
+  metric= "BalancedAccuracy",
+  trControl= control_boot
+)
+```
+
+Extraigo las métricas de los resultados:
+
+```{r}
+resultado_bootAB_C <- modelo_bootAB_C$resample
+media_AB_C <- mean(resultado_bootAB_C$BalancedAccuracy)
+ic_AB_C <- quantile(resultado_bootAB_C$BalancedAccuracy, probs = c(0.025, 0.975))
+
+cat("Balanced Accuracy AB:", round(media_AB_C, 3), "\n")
+cat("IC 95%:", round(ic_AB_C[1], 3), "-", round(ic_AB_C[2], 3), "\n")
+```
+
+Este modelo combina la **información relevante de los genes** con la **información contextual y potencialmente confusora de las variable clínicas**, y el resultado es muy positivo.
+
+- Se observa una **mejora clara** respecto al modelo AB (0.844 → 0.945), lo que sugiere que las variables clínicas **aportan información adicional relevante** para la predición.
+
+- Este comportamiento es coherente con el diseño simulado del experimento, donde tanto las variable clínicas (`edad` y `sexo`) como los genes influyen en la variable `Alzheimer`.
+  
+| Modelo     | Balanced Accuracy | IC 95%                   |
+|------------|-------------------|--------------------------|
+| **AB + C** | **0.945**         | [0.932, 0.959]           |
+| **MC**     | 0.908             | [0.893, 0.923]           |
+
+
+- **AB + C supera a MC** tanto en media de balanced accuracy como en el límite inferior y superior del intervalo de confianza
+
+- Aunque `MC` incluye más genes, estos parecen **introducir ruido**: el modelo tiene que aprender sobre muchas variables no informativas (el 70% del total). En cambio el modelo AB + C se centra solo en los genes relevantes (A + B) y por tanto **se beneficia de una mayor señal ruido**, siendo más **eficiente y preciso**
+
+Esta comparación muestra claramente que **usar solo las variables relevantes**, junto con las variables  clínicas, permite construir un modelo más preciso que **usar todos los predictores sin filtrar**. En escenarios reales, si se puede realizar una selección eficaz de variables (por conocimiento previo o mediante análisis exploratorio), se pueden lograr modelos más robustos y generalizables.
+  
+```{r}
+var_imp <- varImp(modelo_cv_AB_C, scale = FALSE)
+top_vars <- var_imp$importance %>%
+  tibble::rownames_to_column("Variable") %>%
+  dplyr::arrange(desc(Overall)) %>%
+  dplyr::slice(1:20)
+
+ggplot(top_vars, aes(x = reorder(Variable, Overall), y = Overall)) +
+  geom_col(fill = "darkorange") +
+  coord_flip() +
+  labs(title = "Top 20 variables más importantes",
+       y = "Importancia",
+       x= "Variable") +
+  theme_minimal()
+```
+
+- Las dos variables más importantes con **mucha diferencia** son edad y sexo, seguidas de algunos genes.
+
+- Este patrón indica que el modelo **detecta que las variables clínicas son muy predictivas de la variable Y**, incluso más que los propios genes que la generaron (**grupo A y B**).
+
+- Esto es coherente con la simulación, donde `edad` y `sexo`tenían una correlación directa con `Y`, además de influir indirectamente a través de su efecto en los genes `A`y `B`.
+
+- Los genes del **grupo B** siguen dominando frente a los del **grupo A**, lo que corroborá su mayor importancia. Además si nos fijamos en los genes más importantes después de las variables clínicas, aparecen el **B_gene21** y el **B_gene176**, que ya aparecían como los dos genes mas importantes en el modelo sin variables clínicas, lo que refleja que aunque ahora el modelo se fija mucho más en las variables clínicas importantes (`Edad` y `Sexo`), los mismos genes siguen teniendo importancia en los procesos de aprendizaje del modelo.
+
+Las variables clínicas `C` dominan el modelo cuando se incluyen, lo que refleja tanto su impacto directo sobre `Y`como su rol como cofounders que afectan a `M`. Esto **refuerza la idea de que el modelo puede confundirse** si no se controla bien el efecto de las variables clínicas.
+
+## Modelo RF con AB + `always.split.variables` + C
+
+Lo primero es dividir el Datasets en datos de train y test
+
+```{r}
+dataset_con_split <- list()
+
+for (var_c in vars_C) {
+  df_tmp <- cbind(
+    AB[, -ncol(AB)],
+    var_c_value = mydata[[var_c]],
+    Alzheimer = AB$Alzheimer
+  )
+colnames(df_tmp)[ncol(df_tmp)-1] <- var_c
+
+train_tmp <- df_tmp[train_index,]
+test_tmp <- df_tmp[-train_index,]
+
+dataset_con_split[[var_c]] <- list(
+  train = train_tmp,
+  test = test_tmp
+)
+}
+```
+
+Ahora, paso con el entrenamiento de los modelos
+
+```{r}
+tune_grid <- expand.grid(
+  mtry = c(20, 30, 50, 70),
+  splitrule = "gini",
+  min.node.size = c(5,10,20,30)
+)
+
+control_cv <- trainControl(
+  method = "cv",
+  number = 5,
+  classProbs = TRUE,
+  summaryFunction = balancedAccuracySummary
+)
+
+modelo_splitAB <- list()
+for (var_c in names(dataset_con_split)) {
+  modeloSplit <- train (
+    Alzheimer ~.,
+    data = dataset_con_split[[var_c]]$train,
+    method= "ranger",
+    tuneGrid = tune_grid,
+    metric = "BalancedAccuracy",
+    trControl= control_cv,
+    max.depth= 10,
+    importance= "impurity",
+    always.split.variables = var_c
+  )
+modelo_splitAB[[var_c]] <- modeloSplit
+}
+```
+
+Organizo las métricas para obtener los mejores hiperparámetros para cada variable, los mejores hiperparámetros los usaré para entrenar con **Boostraping = 15**
+
+```{r}
+resumen_modelos_split <- lapply(names(modelo_splitAB), function(var_name) {
+  modelo <- modelo_splitAB[[var_name]]
+  
+  best <- modelo$results %>%
+    filter(mtry == modelo$bestTune$mtry,
+           min.node.size == modelo$bestTune$min.node.size)
+  
+  data.frame(
+    variable_clinica = var_name,
+    mtry = modelo$bestTune$mtry,
+    min_node_size = modelo$bestTune$min.node.size,
+    BalancedAccuracy = round(best[["BalancedAccuracy.Balanced Accuracy"]], 4)
+  )
+}) %>% bind_rows()
+print(resumen_modelos_split)
+```
+
+
+```{r}
+resultados_boot_split <- list()
+
+for (var_c in names(modelo_splitAB)) {
+  data_train <- dataset_con_split[[var_c]]$train
+  best <- modelo_splitAB[[var_c]]$bestTune
+  
+  control_boot <- trainControl(
+    method = "boot",
+    number = 15,
+    classProbs = TRUE,
+    summaryFunction = balancedAccuracySummary
+  )
+  
+  modelo_boot <- train(
+    Alzheimer ~ .,
+    data = data_train,
+    method = "ranger",
+    tuneGrid = best,
+    metric = "BalancedAccuracy",
+    trControl = control_boot,
+    max.depth = 10,
+    importance = "impurity",
+    always.split.variables = var_c
+  )
+  
+  resultados_boot_split[[var_c]] <- modelo_boot
+}
+```
+
+Ahora extraigo el rendimiento del modelo para cada variable.
+
+```{r}
+for (var_c in names(modelo_splitAB)) {
+  cat("Variable forzada:", var_c, "\n")
+  resultado_boot <- modelo_splitAB[[var_c]]$resample
+  resultado_boot$Variable <- var_c
+  resultados_boot_split[[var_c]] <- resultado_boot
+  
+  media <- mean(resultado_boot$BalancedAccuracy, na.rm = TRUE)
+  ic <- quantile(resultado_boot$BalancedAccuracy, probs = c(0.025, 0.975), na.rm = TRUE)
+  
+  cat("  → Media Balanced Accuracy:", round(media, 3), "\n")
+  cat("  → IC 95%:", round(ic[1], 3), "-", round(ic[2], 3), "\n\n")
+}
+```
+
+### Resultados comparados
+
+| Modelo                          | Balanced Accuracy | IC 95%            |
+|---------------------------------|-------------------|-------------------|
+| **M + split: edad**            | 0.914             | [0.893, 0.927]    |
+| **AB + split: edad**           | **0.914**         | [0.900, 0.923]    |
+| M + split: rin                 | 0.848             | [0.837, 0.858]    |
+| AB + split: rin               | 0.848             | [0.838, 0.861]    |
+| M + split: sexo                | 0.831            | [0.819, 0.848]    |
+| AB + split: sexo              | 0.841             | [0.820, 0.860]    |
+| M + split: lote                | 0.849             | [0.829, 0.862]    |
+| AB + split: lote              | 0.848             | [0.842, 0.856]    |
+
+
+**En todos los casos, los modelos entrenados solo con genes informativos (AB) tienen igual o mejor rendimiento** que los que usan todos los genes (M). Esto confirma que **incluir genes no informativos introduce ruido y reduce el rendimiento** del modelo, incluso si se fuerza una buena variable de split.
+
+- En el caso de la variable `edad` el resultado es prácticamente el mismo
+
+- En el caso de `sexo`, `rin` y `lote`, los resultados son muy similares entre M y AB, lo que sugiere que estas variables **no tienen una influencia suficientemente fuerte o directa sobre Y** como para marcar diferencias al ser forzadas.
+
+Se concluye que forzar una **variable clínicamente relavante** como `edad` **mejora el rendimiento** pero solo si los predictores también son informativos. **El mejor enfoque es combinar una buena selección de predictores (AB)** con un uso dirigido de variables clínicas como `edad` mediante `always.split.variables`. Incluir predictores irrelevantes como en el modelo M **diluye el efecto positivo de forzar una variable útil**.
+
+```{r}
+top_importancias <- lapply(names(modelo_splitAB), function(var_c) {
+  imp <- varImp(modelo_splitAB[[var_c]], scale = FALSE)$importance
+  imp$Variable <- rownames(imp)
+  imp$Split <- var_c
+  imp <- imp %>% arrange(desc(Overall)) %>% head(20)
+  return(imp)
+}) %>% bind_rows()
+
+variables_forzadas <- unique(top_importancias$Split)
+
+for (var in variables_forzadas) {
+  df_plot <- top_importancias %>% filter(Split == var)
+  
+  p <- ggplot(df_plot, aes(x = reorder(Variable, Overall), y = Overall)) +
+    geom_bar(stat = "identity", fill = "darkorange") +
+    coord_flip() +
+    theme_minimal() +
+    labs(title = paste("Top 20 variables más importantes -", var),
+         x = "Variable", y = "Importancia")
+  
+  print(p)  
+}
+```
+
+- **Edad**
+  - La variable `edad` domina claramente la importancia en el modelo, con una diferencia enorme respecto al resto de genes.
+  - Esto concuerda con cómo se generaron los datos: **edad fue una de las variables clínicas que influían directamente sobre los genes del grupo A** y también sobre la variable objetivo `Y`. Por tanto, su peso en el modelo es elevado.
+  
+- **RIN**
+  - `RIN`, **no fue simulada para tener relación ni con los genes ni con Y**, y como se observa no aparece entre las variables más importantes, lo que es coherente con la simulación.
+  - No tendría sentido forzar la variable `RIN`.
+  
+- **Sexo**
+  - En este caso, se observa que `sexo` tiene una **importancia destacada**, aunque inferior a la de `edad`.
+  - Este resultado también es consistente con el diseño simulado: **Sexo influye sobre los genes del grupo B** y además afecta directamente a `Y`. Aun así, comporado con `edad`, su efecto es menor, lo cual se refleja en su menor importancia relativa.
+  
+- **Lote**
+  - Al igual que `rin`, `lote` tampoco fue programado para afectar a genes o `Y`, por lo que su **baja importancia es lo esperado**
+  - La importancia se distribuye entre genes pertenecientes al **grupo B** sobre todo, ya que `lote` no añade información al modelo.
+  
+Los resultados apoyan la validez del diseño simulado. Las variables que deberían tener impacto (edad y sexo) son capturadas como importantes, mientras que las que no deberían influir (rin y lote) no destacan. 
+
+# Tercera Parte. Solo con los grupos de genes A y B (informativos) + grupo de genes D
+
+Preparo el conjunto de datos
+
+```{r}
+genesD <- paste0("D_gene", 1:300)
+vars_ABD <- c(genesA, genesB, genesD)
+
+ABD <- mydata[, c(vars_ABD, "Alzheimer")]
+ABD_C <- cbind(ABD[, -ncol(ABD)], mydata[, vars_C], Alzheimer = ABD$Alzheimer)
+```
+
+## RF con solo ABD
+
+Genero los datos de train y test
+
+```{r}
+train_dataABD <- ABD[train_index,]
+test_dataABD <- ABD[-train_index,]
+```
+
+Ahora entreno el modelo `ABD` con hiperparámetros optimizados y bootstrapping
+
+```{r}
+tune_grid <- expand.grid(
+  mtry = c(20, 30, 50, 70),
+  splitrule = "gini",
+  min.node.size = c(5,10,20,30)
+)
+
+control_cv <- trainControl(
+  method = "cv",
+  number = 5,
+  classProbs = TRUE,
+  summaryFunction = balancedAccuracySummary
+)
+
+modelo_cv_ABD <- train(
+  Alzheimer ~.,
+  data = train_dataABD,
+  method= "ranger",
+  tuneGrid = tune_grid,
+  metric = "BalanceAccuracy",
+  trControl= control_cv,
+  max.depth= 10,
+  importance= "impurity"
+)
+```
+
+Obtengo el mejor resultado de hiperperámetros
+
+```{r}
+mejores_hiperparametros <- modelo_cv_ABD$bestTune
+print(mejores_hiperparametros)
+```
+
+Una vez obtenido esta mejor combinación de hiperparámetros entreno el modelo con **bootstrap = 15**
+
+```{r}
+control_boot <- trainControl(
+  method= "boot",
+  number = 15,
+  classProbs= TRUE,
+  summaryFunction = balancedAccuracySummary
+)
+
+modelo_bootABD <- train(
+  Alzheimer~.,
+  data = train_dataABD,
+  method = "ranger",
+  tuneGrid = mejores_hiperparametros,
+  metric= "BalancedAccuracy",
+  trControl= control_boot
+)
+```
+
+Extraigo los resultados del modelo
+
+```{r}
+resultado_bootABD <- modelo_bootABD$resample
+media_ABD <- mean(resultado_bootABD$BalancedAccuracy)
+ic_ABD <- quantile(resultado_bootABD$BalancedAccuracy, probs = c(0.025, 0.975))
+
+cat("Balanced Accuracy ABD:", round(media_ABD, 3), "\n")
+cat("IC 95%:", round(ic_AB[1], 3), "-", round(ic_ABD[2], 3), "\n")
+```
+
+Este modelo utiliza todos los genes informativos (**Grupo A y grupo B**) + el grupo de genes D, que no influyen en la variable objetivo `Y` y que tampoco estarán relacionados con ninguna variable de `C`, aunque al igual que los dos grupos anteriores si que tienen correlación interna (0.2-0.3).
+
+- Su valor de **Balanced Accuracy** es prácticamente igual que en el **modelo AB** lo que indica que el incluir genes que no tienen ningún efecto predictivo sobre `Y` no altera mucho los resultados del modelo
+
+- Además, el intervalo de confianza es estrecho, lo que indica que el modelo es **estable y sus resultados consistentes** bajo re-muestreo
+
+Ahora voy a ver el resultado de las variables más importantes y comporarlo con el resultado del **modelo AB**
+
+```{r}
+var_imp <- varImp(modelo_cv_ABD, scale = FALSE)
+top_vars <- var_imp$importance %>%
+  tibble::rownames_to_column("Variable") %>%
+  dplyr::arrange(desc(Overall)) %>%
+  dplyr::slice(1:20)
+
+ggplot(top_vars, aes(x = reorder(Variable, Overall), y = Overall)) +
+  geom_col(fill = "darkgreen") +
+  coord_flip() +
+  labs(title = "Top 20 variables más importantes",
+       y = "Importancia",
+       x= "Variable") +
+  theme_minimal()
+```
+
+La tabla de importancia muestra un resultado muy parecido a la del **modelo AB**
+
+- Las dos variables más importantes en este gráfico (**B_gene59 y B_gene176**) también son las dos variables más importantes del **AB**.
+
+- Además, como es normal cuando no hay variables clínicas, la distribución de la importancia **es muy homogénea**, los dos primeros genes dominan, pero luego hay una bajada progresiva en términos de importancia.
+
+- La gran mayoría de los genes (75%) pertenecen al **grupo B**. Este resultado es el esperado y el más coherente teniendo en cuenta la simulación, y esque los genes del **grupo B** son mucho más importantes a la hora de crear la variable `Y` (peso = 0.5) que los del **grupo A** (peso = 0.2). 
+
+- Esto indica que el modelo ha captado correctamente **la mayor señal predictiva de los genes del grupo B** y la introducción del nuevo grupo de genes (`D`) no enmascara la señal predictiva de los genes importantes.
+
+
+## Modelo RF con ABD + C
+
+Genero los datos de train y test
+
+```{r}
+train_dataABD_C <- ABD_C[train_index,]
+test_dataABD_C <- ABD_C[-train_index,]
+```
+
+Entreno el modelo
+
+```{r}
+tune_grid <- expand.grid(
+  mtry = c(20, 30, 50, 70),
+  splitrule = "gini",
+  min.node.size = c(5,10,20,30)
+)
+
+control_cv <- trainControl(
+  method = "cv",
+  number = 5,
+  classProbs = TRUE,
+  summaryFunction = balancedAccuracySummary
+)
+
+modelo_cv_ABD_C <- train(
+  Alzheimer ~.,
+  data = train_dataABD_C,
+  method= "ranger",
+  tuneGrid = tune_grid,
+  metric = "BalanceAccuracy",
+  trControl= control_cv,
+  max.depth= 10,
+  importance= "impurity"
+)
+```
+
+Obtengo la mejor combinación de hiperparámetros
+
+```{r}
+mejores_hiperparametros <- modelo_cv_ABD_C$bestTune
+print(mejores_hiperparametros)
+```
+
+Una vez obtenida entreno con **bootsrap = 15**
+
+```{r}
+control_boot <- trainControl(
+  method= "boot",
+  number = 15,
+  classProbs= TRUE,
+  summaryFunction = balancedAccuracySummary
+)
+
+modelo_bootABD_C <- train(
+  Alzheimer~.,
+  data = train_dataABD_C,
+  method = "ranger",
+  tuneGrid = mejores_hiperparametros,
+  metric= "BalancedAccuracy",
+  trControl= control_boot
+)
+```
+
+Extraigo los resultados
+
+```{r}
+resultado_bootABD_C <- modelo_bootABD_C$resample
+media_ABD_C <- mean(resultado_bootABD_C$BalancedAccuracy)
+ic_ABD_C <- quantile(resultado_bootABD_C$BalancedAccuracy, probs = c(0.025, 0.975))
+
+cat("Balanced Accuracy ABD_C:", round(media_ABD_C, 3), "\n")
+cat("IC 95%:", round(ic_AB_C[1], 3), "-", round(ic_ABD_C[2], 3), "\n")
+```
+
+Este modelo combina **la información relevante de los genes A y B** + un grupo de genes que no es informativo y que puede llegar a confunidir al modelo + **la información contextual de las variables clínicas**. El resultado es muy bueno
+
+- Se observa una clara mejora frente al modelo `ABD`(0.84 → 0.931). Esto es lógico y sigue la pauta de todos los otros modelos, cuando se añaden las variables clínicas, estas **aportan información adicional relevante** para la predicción y mejoran los resultados.
+
+ | Modelo     | Balanced Accuracy | IC 95%                   |
+|------------|-------------------|--------------------------|
+| **AB + C** | **0.945**         | [0.932, 0.959]           |
+| **ABD + C** | 0.931            | [0.932, 0.94]           |
+
+- Pero aunque el resultado es muy bueno, no llega a superar al del modelo **AB + C**, es decir el modelo que solo tiene genes informativos + las variables clínicas. 
+
+- Esto nos indica que no por incluir más genes el modelo va a ser mejor, si no que incluso al revés, al introducir 300 genes que no aportan información, el modelo puede tomar decisiones basadas en estos genes y bajar el resultado del modelo como está sucediendo en este caso.
+
+Por lo tanto, comprobamos que **usar solo los  genes informativos** junto con las variables clínicas permite construir un modelo mucho más fiable a la hora de predecir que sin introducimos los **genes del grupo D o los genes ruido**. En escenarios reales, si se puede realizar una selección eficaz de variables, ya sea por conocimiento previo o mediante análisis exploratorio, se pueden lograr modelos con mejores resultados y más generalizables.
+
+Ahora calculo las 20 variables más importantes
+
+```{r}
+var_imp <- varImp(modelo_cv_ABD_C, scale = FALSE)
+top_vars <- var_imp$importance %>%
+  tibble::rownames_to_column("Variable") %>%
+  dplyr::arrange(desc(Overall)) %>%
+  dplyr::slice(1:20)
+
+ggplot(top_vars, aes(x = reorder(Variable, Overall), y = Overall)) +
+  geom_col(fill = "darkgreen") +
+  coord_flip() +
+  labs(title = "Top 20 variables más importantes",
+       y = "Importancia",
+       x= "Variable") +
+  theme_minimal()
+```
+- **Edad y sexo** son con mucha diferencia las variables más importantes del modelo a la hora de decidir. Esto es coherente con la simulación ya que estas tienen mucho peso tanto en la generación de los genes como en la variable objetivo `Y`.
+
+-Seguido de las dos variables clínicas aparecen genes que ya eran muy importantes en el anterior modelo. Esto refleja que aunque el modelo se fija ahora mucho más en las variables clínicas (`Edad` y `Sexo`), los mismos genes siguen teniendo importancia en los procesos de aprendizaje del modelo.
+
+-Si comparamos este resultado con el del modelo **AB_C** nos damos cuenta que los valores de importancia de las variables clínicas en este modelo han disminuido, mientras que la importancia de los genes ha aumentado. Esto puede ser la clave del porque los resultados del modelo han disminuido. Mientras que el modelo anterior se fia mucho más en las variables clínicas, mucho más importantes, este modelo, quizá debido a la introducción del **grupo de genes D** dsiminuye un poco la importancia de las variables clínicas (Mucho más  importantes que los genes) para darle más valor a los genes.
+
+## Modelo RF con ABD + `always.split.variables` + C
+
+Divido los datos en train y test
+
+```{r}
+dataset_con_split <- list()
+
+for (var_c in vars_C) {
+  df_tmp <- cbind(
+    ABD[, -ncol(ABD)],
+    var_c_value = mydata[[var_c]],
+    Alzheimer = ABD$Alzheimer
+  )
+colnames(df_tmp)[ncol(df_tmp)-1] <- var_c
+
+train_tmp <- df_tmp[train_index,]
+test_tmp <- df_tmp[-train_index,]
+
+dataset_con_split[[var_c]] <- list(
+  train = train_tmp,
+  test = test_tmp
+)
+}
+```
+
+Entreno los modelos
+
+```{r}
+tune_grid <- expand.grid(
+  mtry = c(20, 30, 50, 70),
+  splitrule = "gini",
+  min.node.size = c(5,10,20,30)
+)
+
+control_cv <- trainControl(
+  method = "cv",
+  number = 5,
+  classProbs = TRUE,
+  summaryFunction = balancedAccuracySummary
+)
+
+modelo_splitABD <- list()
+for (var_c in names(dataset_con_split)) {
+  modeloSplit <- train (
+    Alzheimer ~.,
+    data = dataset_con_split[[var_c]]$train,
+    method= "ranger",
+    tuneGrid = tune_grid,
+    metric = "BalancedAccuracy",
+    trControl= control_cv,
+    max.depth= 10,
+    importance= "impurity",
+    always.split.variables = var_c
+  )
+modelo_splitABD[[var_c]] <- modeloSplit
+}
+```
+
+Obtengo los mejores hiperparámetros para cada variable. Estos hiperparámetros se usarán para entrenar todos los modelos con **Boostraping = 15**
+
+```{r}
+resumen_modelos_split <- lapply(names(modelo_splitABD), function(var_name) {
+  modelo <- modelo_splitABD[[var_name]]
+  
+  best <- modelo$results %>%
+    filter(mtry == modelo$bestTune$mtry,
+           min.node.size == modelo$bestTune$min.node.size)
+  
+  data.frame(
+    variable_clinica = var_name,
+    mtry = modelo$bestTune$mtry,
+    min_node_size = modelo$bestTune$min.node.size,
+    BalancedAccuracy = round(best[["BalancedAccuracy.Balanced Accuracy"]], 4)
+  )
+}) %>% bind_rows()
+print(resumen_modelos_split)
+```
+
+```{r}
+resultados_boot_split <- list()
+
+for (var_c in names(modelo_splitABD)) {
+  data_train <- dataset_con_split[[var_c]]$train
+  best <- modelo_splitABD[[var_c]]$bestTune
+  
+  control_boot <- trainControl(
+    method = "boot",
+    number = 15,
+    classProbs = TRUE,
+    summaryFunction = balancedAccuracySummary
+  )
+  
+  modelo_boot <- train(
+    Alzheimer ~ .,
+    data = data_train,
+    method = "ranger",
+    tuneGrid = best,
+    metric = "BalancedAccuracy",
+    trControl = control_boot,
+    max.depth = 10,
+    importance = "impurity",
+    always.split.variables = var_c
+  )
+  
+  resultados_boot_split[[var_c]] <- modelo_boot
+}
+```
+
+Ahora extraigo el rendimiento del modelo para cada variable
+
+```{r}
+for (var_c in names(modelo_splitABD)) {
+  cat("Variable forzada:", var_c, "\n")
+  resultado_boot <- modelo_splitABD[[var_c]]$resample
+  resultado_boot$Variable <- var_c
+  resultados_boot_split[[var_c]] <- resultado_boot
+  
+  media <- mean(resultado_boot$BalancedAccuracy, na.rm = TRUE)
+  ic <- quantile(resultado_boot$BalancedAccuracy, probs = c(0.025, 0.975), na.rm = TRUE)
+  
+  cat("  → Media Balanced Accuracy:", round(media, 3), "\n")
+  cat("  → IC 95%:", round(ic[1], 3), "-", round(ic[2], 3), "\n\n")
+}
+```
+
+
+```{r}
+top_importancias <- lapply(names(modelo_splitABD), function(var_c) {
+  imp <- varImp(modelo_splitABD[[var_c]], scale = FALSE)$importance
+  imp$Variable <- rownames(imp)
+  imp$Split <- var_c
+  imp <- imp %>% arrange(desc(Overall)) %>% head(20)
+  return(imp)
+}) %>% bind_rows()
+
+variables_forzadas <- unique(top_importancias$Split)
+
+for (var in variables_forzadas) {
+  df_plot <- top_importancias %>% filter(Split == var)
+  
+  p <- ggplot(df_plot, aes(x = reorder(Variable, Overall), y = Overall)) +
+    geom_bar(stat = "identity", fill = "darkorange") +
+    coord_flip() +
+    theme_minimal() +
+    labs(title = paste("Top 20 variables más importantes -", var),
+         x = "Variable", y = "Importancia")
+  
+  print(p)  
+}
+```
+
+# Cuarta Parte. Modelo solo con la variables clínicas
+
+Ahora voy a entrenar un modelo solo con las variables clínicas. Este experimento permite comprobar cuánto poder predictivo tienen solo las variables clínicas. Nos ayudará a interpretar si, por ejemplo, edad y sexo que son las variables mas importantes, por sí solas pueden predecir la variable objetivo `Y` con precisión. Este enfoque será clave para comparar con otros modelos.
+
+Primero generamos los datos de train y test
+
+```{r}
+train_dataC <- df_C[train_index, ]
+test_dataC <- df_C[-train_index, ]
+```
+
+Ahora entreno con validación cruzada y optimización de hiperámetros
+
+```{r}
+tune_grid <- expand.grid(
+  mtry = c(1,2,3,4),
+  splitrule = "gini",
+  min.node.size = c(5,10,20,30)
+)
+
+control_cv <- trainControl(
+  method = "cv",
+  number = 5,
+  classProbs = TRUE,
+  summaryFunction = balancedAccuracySummary
+)
+
+modelo_cv_C <- train(
+  Alzheimer ~.,
+  data = train_dataC,
+  method = "ranger",
+  tuneGrid = tune_grid,
+  metric="BalancedAccuracy",
+  trControl= control_cv,
+  max.depth= 10,
+  importance="impurity"
+)
+```
+
+Ahora imprimo los mejores hiperparámetros
+
+```{r}
+mejores_hiperparametros <- modelo_cv_C$bestTune
+print(mejores_hiperparametros)
+```
+
+Ahora se entrena con **bootstarp = 15**
+
+```{r}
+control_boot <- trainControl(
+  method= "boot",
+  number = 15,
+  classProbs= TRUE,
+  summaryFunction = balancedAccuracySummary
+)
+
+modelo_bootC <- train(
+  Alzheimer~.,
+  data = train_dataC,
+  method = "ranger",
+  tuneGrid = mejores_hiperparametros,
+  metric= "BalancedAccuracy",
+  trControl= control_boot
+)
+```
+
+
+Extraigo las métricas de los resultados
+
+```{r}
+resultado_bootC <- modelo_bootC$resample
+media_C <- mean(resultado_bootC$BalancedAccuracy)
+ic_C <- quantile(resultado_bootC$BalancedAccuracy, probs = c(0.025, 0.975))
+
+cat("Balanced Accuracy C:", round(media_C, 3), "\n")
+cat("IC 95%:", round(ic_C[1], 3), "-", round(ic_C[2], 3), "\n")
+```
+
+El modelo consigue una Balanced Accuracy del 82.9%, lo que es representa un buen resultado, sobre todo teneindo en cuanta que no dispone de información genética (`M`), sino únicamente de las **4 variables clínicas**. 
+
+Es **coherente con cómo se han generado los datos simulados**, donde las variables `edad` y `sexo`, **tienen una influencia muy importante en la variable Y**. Por lo tanto, el modelo es capaz de capturar parte importante se la señal predictiva solo con C, aunque de manera limitada
+
+Este resultado resalta la hipótesis causal planteada, donde las variables clínicas no solo incluyen en ciertos genes, sino que también tienen un impacto muy fuerte sobre `Y`. 
+
+```{r}
+var_imp <- varImp(modelo_cv_C, scale = FALSE)
+top_vars <- var_imp$importance %>%
+  tibble::rownames_to_column("Variable") %>%
+  dplyr::arrange(desc(Overall)) %>%
+  dplyr::slice(1:4)
+
+ggplot(top_vars, aes(x = reorder(Variable, Overall), y = Overall)) +
+  geom_col(fill = "lightblue") +
+  coord_flip() +
+  labs(title = "Variables más importantes",
+       y = "Importancia",
+       x= "Variable") +
+  theme_minimal()
+```
+
+Como se observa en el gráfico de importancias, las variables **RIN y lote**, que fueron diseñadas como neutras (sin relación con M ni con Y), no están ayudando prácticamente nada al modelo a predecir, y lo que ayudan es por pura correlación estadística inducida (ruido o colinealidad accidental). 
+
+Algo a destacar, esque mientras en todos los modelos anteriores donde se han usado las variables clínicas, siempre era la variable **edad** la que mayor importancia tenía, como es normal por su mayor relación con Y. Pero en este caso la variable más importante para el modelo es `sexo` que tiene una relación mucho más leve con `Y`, del 0.1, por el 0.3 de `edad`. Esto puede deberse a que como hay muy pocas variables, la métrica puede estar **sesgada a favor de variables categóricas o con menos niveles** como el sexo. 
+
+La importancia de `sexo` en este gráfico no significa que tenga más peso causal real, si no que en este contexto específico del modelo con solo 4 variables, `sexo` ofrece una **ruta fácil de partición que el modelo explota de manera proritaria**. Este es un artefacto común en los árboles de decisón con pocas variables y por eso es recomendable interpretar siempre la importancia en conjunto con las correlaciones y el conocimiento previo de la simulación. 
+
+Este comportamiento ya no es tan acusado cuando hay muchas más variables (como en `MC` o `AB+C`), donde `edad` si dominaba claramente.
+
+# BoxPlot de todos los modelos
+
+Ahora voy a generar un **BoxPlot** para cada modelo del experimento ara así comparar los resultados de la **Balanced Accuracy**.
+
+```{r}
+resample_M <- modelo_bootM$resample %>%
+  rename(BalancedAccuracy = `BalancedAccuracy.Balanced Accuracy`) %>%
+  mutate(Modelo = "M")
+
+resample_MC <- modelo_bootMC$resample %>%
+  rename(BalancedAccuracy = `BalancedAccuracy.Balanced Accuracy`) %>%
+  mutate(Modelo = "MC")
+
+resample_splitMC <- lapply(names(modelo_split), function(var_c) {
+  df <- modelo_split[[var_c]]$resample
+  df <- df %>%
+    rename(BalancedAccuracy = `BalancedAccuracy.Balanced Accuracy`) %>%
+    mutate(Modelo = paste0("Split_MC_", var_c))
+  df
+}) %>% bind_rows()
+
+resample_AB <- modelo_bootAB$resample %>%
+  rename(BalancedAccuracy = `BalancedAccuracy.Balanced Accuracy`) %>%
+  mutate(Modelo = "AB")
+
+resample_AB_C <- modelo_bootAB_C$resample %>%
+  rename(BalancedAccuracy = `BalancedAccuracy.Balanced Accuracy`) %>%
+  mutate(Modelo = "AB_C")
+
+resample_splitAB <- lapply(names(modelo_split), function(var_c) {
+  df <- modelo_splitAB[[var_c]]$resample
+  df <- df %>%
+    rename(BalancedAccuracy = `BalancedAccuracy.Balanced Accuracy`) %>%
+    mutate(Modelo = paste0("Split_AB_", var_c))
+  df
+}) %>% bind_rows()
+
+resample_ABD <- modelo_bootABD$resample %>%
+  rename(BalancedAccuracy = `BalancedAccuracy.Balanced Accuracy`) %>%
+  mutate(Modelo = "ABD")
+
+resample_ABD_C <- modelo_bootABD_C$resample %>%
+  rename(BalancedAccuracy = `BalancedAccuracy.Balanced Accuracy`) %>%
+  mutate(Modelo = "ABD_C")
+
+resample_splitABD <- lapply(names(modelo_split), function(var_c) {
+  df <- modelo_splitABD[[var_c]]$resample
+  df <- df %>%
+    rename(BalancedAccuracy = `BalancedAccuracy.Balanced Accuracy`) %>%
+    mutate(Modelo = paste0("Split_ABD_", var_c))
+  df
+}) %>% bind_rows()
+
+resample_C <- modelo_bootC$resample %>%
+  rename(BalancedAccuracy = `BalancedAccuracy.Balanced Accuracy`) %>%
+  mutate(Modelo = "C")
+
+resample_total <- bind_rows(resample_M, resample_MC, resample_C, resample_splitMC, resample_AB, resample_AB_C, resample_splitAB, resample_ABD, resample_ABD_C, resample_splitABD)
+
+
+
+ggplot(resample_total, aes(x = Modelo, y = BalancedAccuracy, fill = Modelo)) +
+  geom_boxplot(color = "darkgreen") +
+  theme_minimal() +
+  labs(
+    title = "Comparativa de Balanced Accuracy entre modelos",
+    x = "Modelo",
+    y = "Balanced Accuracy"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+## Modelos con genes + variables clínicas relevantes:
+
+-**AB + C y ABD + C** logran las *balanced accuracy* más altas (~0.945 y ~0.931, respectivamente). Esto es coherennte con la simulación:
+
+- AB contiene la mayoría de la señal real (grupo B influye fuerte en Y, grupo A de forma leve).
+- C incluye edad, que influye directamente en Y
+- Sexo también contribuye, aunque débilmente
+- La mejora al añadir C sugiere que el modelo es capaz de **incorporar variables clínicas relevantes junto a los genes para maximizar rendimiento**
+
+## Modelos solo con expresión (M, AB, ABD):
+
+-**M** (todos los genes) rinde peor (~0.844), debido a la dilución de la señal de A y B entre 1000 genes, la mayoría ruido.
+
+-**AB** (Solo genes relevantes) mejora ligeramente, mostrando que la selección de genes útiles ayuda, pero el rendimiento aún es limitado sin las variables clinicas
+
+-**ABD** (Incluye también D) cae (~0.840), lo que muestra que agregar genes sin información real introduce ruido y perjudica.
+
+El modelo reconoce y responde al **contenido informativo real** de los genes. Incluir solo genes con relación causal mejora respeccto a usar todos, pero no basta sin las variables clínicas
+
+## Modelo únicamente con las variables clínicas
+
+El modelo `C` muestra unos resultados muy similares al modelo `M` lo que indica que los resultados no son del todo buenos. Además aunque la media es algo superior a la del modelo `AB`, su rendimiento es claramente inferior a los modelos `AB+c` y `MC`. Esto indica que, aunque `C` tiene poder predictivo, es insuficiente por sí solo para capturar toda la señal relevante simulada en los genes `M`
+
+Cuando se usa el parámetro `always.split.variables` sobre `C` dentro de `M` o `AB`, los resultados si que son muy buenos, lo que refuerza que el modelo puede integrar la señal de `C` de manera más eficaz cuando dispone también de las señales verdaderamente informativas de los genes.
+
+La comparación con el resto de modelos ilustra como `C` puede inducir confusión si no es correctamente controlada.
+
+## Impacto del parámetro `always.split.variables`
+
+Estas combinaciones permiten analizar la capacidad del modelo de aprovechar o resistirse a variables clínicas con distinto rol:
+
+-**Edad**
+- Mejora todos los modelos de forma clara
+- Coherente con su correlación con Y (0.3) y con el grupo A
+- Esto valida que el **modelo detecta y usa una señal real causal cuando se fuerza a incluirla**
+
+-**Sexo**
+- Mejora algo, pero menos que edad.
+- Coherente con su rol como predictor débil de Y (0.1), aunque influye fuertemente en los genes B
+- El modelo capta parcialmente su utilidad, pero la mejora es marginal
+
+-**RIN y lote**
+- No mejoran e incluso empeoran ligeramente los resultados
+- Esto es lo esperado, son **variables confusoras o ruido puro** sin relación real con `Y`
+- La caída o el estancamiento al forzarlas indica que el modelo no se deja engañar por estas variables no informaticas
+
+El modelo **es robusto frente a confusión** y no se deja arrastrar por **RIN o Lote**. Esto valida el diseño del simulador y la correcta separación entre señal y ruido
+
+## Comparaciones clave entre configuraciones
+
+| Comparación                                   | Interpretación                                                                                                                                                   |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **MC vs M**                                   | La mejora (0.908 vs 0.844) viene probablemente por la inclusión de edad y sexo. Muestra que las variables clínicas sí aportan, pero no siempre con igual fuerza. |
+| **AB + C vs AB**                              | Gran mejora (0.945 vs 0.845). Indica que C permite al modelo captar mejor la relación causal entre C → M’ → Y.                                                   |
+| **ABD vs AB**                                 | Ligeramente peor, muestra que añadir genes D (sin información) puede deteriorar la predicción.                                                                   |
+| **ABD + C vs AB + C**                         | Algo peor también (\~0.931 vs 0.945), de nuevo por la inclusión de genes no relacionados con Y.                                                                  |
+| **Split con edad vs Split con RIN/lote/sexo** | Solo edad mejora significativamente, lo que demuestra que el modelo *distingue variables con efecto causal de las confusoras*.                                   |
+## Conclusiones de los resultados
+
+-La simulación está bien diseñada para estudiar confusión y robustez en modelos.
+
+-Los modelos Random Forest responden correctamente a la estructura causal:
+- Mejoran con genes relevantes (AB)
+- Aún más con edad y sexo
+- Son robustos frente a RIN/lote
+
+-**El mejor modelo es AB + C**, que incluye genes con relación causal y variables clínicas relevantes
+
+-**El modelo generaliza bien**, incluso cuando se le fuerza a usar ruido, no sufre deterioro externo
+
+-Esto indica que la combinación de simulador + modelo es váida para evaluar estrategias de selección de variables y detección de señal en presencia de confusión.
+
+# Conclusión
+
+Los resultados muestran que el uso de variables clínicas puede mejorar el rendimiento predictivo, pero también introduce riesgo de sobreajuste si actúan como confusoras. En particular, el parámetro `always.split.variables` permite identificar cuándo un modelo está priorizando estas variables. Los modelos entrenados solo con genes informativos `AB` logran un buen rendimiento, pero mejoran al incluir variables clínicas relevantes (`Edad` y `Sexo`). El análisis de importancia de variables respalda estas observaciones, mostrando como `edad` y `sexo` emergen como dominantes cuando se fuerza su inclusión. En conjunto, este enfoque permite evaluar el impacto de la confusión y de la selección de variables en contextos biomédicos simulados.
