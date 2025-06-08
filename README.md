@@ -1,6 +1,6 @@
 # Análisis predictivo en datos transcriptómicos y clínicos del estudio ROSMAP
 
-Este repositorio contiene el código y los resultados asociados al Trabajo de Fin de Máster (TFM) en Bioinformática, centrado en el análisis predictivo y la selección de variables relevantes en datos de expresión génica y variables clínicas asociados al deterioro cognitivo.
+Este repositorio contiene el código y los resultados asociados al Trabajo de Fin de Máster (TFM) en Bioinformática, centrado en la comprensión del papel de las variables de confusión sobre modelos de Machine Learning no lineales como Random Forest.
 
 ---
 
