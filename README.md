@@ -1,12 +1,14 @@
 # Análisis predictivo en datos transcriptómicos y clínicos del estudio ROSMAP
 
-Este repositorio contiene el código y los resultados asociados al Trabajo de Fin de Máster (TFM) en Bioinformática, centrado en la comprensión del papel de las variables de confusión sobre modelos de Machine Learning no lineales como Random Forest.
-
+Este repositorio contiene el código y los resultados asociados al Trabajo de Fin de Máster (TFM) en Bioinformática, centrado en la comprensión del papel de las variables de confusión sobre modelos de Machine Learning no lineales.
 ---
 
 ## Descripción del proyecto
 
-El objetivo principal es evaluar el impacto de diferentes subconjuntos de datos (transcriptómicos, clínicos y técnicos) en la predicción del estado neuropatológico utilizando modelos de Random Forest. Se utilizan datos del estudio [ROSMAP](https://www.radc.rush.edu/), simulaciones controladas y análisis de importancia de variables para identificar biomarcadores potenciales.
+El objetivo principal de este trabajo es comprender el papel de las variables de confusión en modelos
+de Machine Learning no lineales, concretamente en algoritmos del tipo Random Forest. Para ello, se
+aplicarán técnicas de Machine Learning sobre datos transcriptómicos reales y simulados para
+observar su comportamiento.
 
 ---
 
