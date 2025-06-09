@@ -8,7 +8,7 @@ Esta carpeta contiene el código y los resultados del análisis realizado con da
 
 - Evaluar cómo la inclusión de variables confusoras (clínicas, técnicas y neuropatológicas) afecta al rendimiento predictivo de modelos Random Forest
 - Identificar genes cuya importancia se mantiene estable a lo largo de múltiples repeticiones, y que puedan ser considerados biomarcadores transcriptómicos robustos
-- Analizar cómo el parámetro `always.split.variables` puede mejorar la interpretación de modelos, priorizando vraiables confusoras altamente informativas.
+- Analizar cómo el parámetro `always.split.variables` puede mejorar la interpretación de modelos, priorizando variables confusoras altamente informativas.
 - Validar el efecto de la eliminación de genes redundantes (alta correlación o baja varianza) sobre el rendimiento y la estabilidad del modelo.
 
 ---
@@ -18,7 +18,9 @@ Esta carpeta contiene el código y los resultados del análisis realizado con da
 - entrenamiento_rosmap.Rmd: Script principal en R Markdown que contiene todo el flujo de análisis: preprocesamiento, filtrado de genes, entrenamiento de modelos y análisis de importancia.
 - entrenamiento_rosmap.html: Versión renderizada del documento anterior.
 - Scripts: Carpeta con funciones auxiliares para entrenamiento de los diferentes modelos en un clúster.
-- Datos: Carpeta que incluye dos archivos `.rds`, uno que las variables confusoras (ROSMAP_RINPMIAGESEX_covs.rds) y otro que contien los datos ómicos (ROSMAP_RINPMIAGESEX_resids.rds).
+- Datos: Carpeta que incluye dos archivos `.rds`:
+  - `ROSMAP_RINPMIAGESEX_covs.rds`: variables confusoras
+  - `ROSMAP_RINPMIAGESEX_resids.rds`:  datos ómicos.
 
 --- 
 
@@ -27,12 +29,12 @@ Esta carpeta contiene el código y los resultados del análisis realizado con da
 1. Carga de datos y preprocesamiento
    - Unión de matriz de expresión génica (`M`) y variables confusoras (`C`)
    - Eliminación de genes altamente correlacionados y con baja varianza para la creación de la matriz (`M`)
-   - Creación de los distintos DataFrames
+   - Creación de los distintos conjuntos de datos para entrenar modelos comparables. 
      
 2. Entrenamiento de los modelos
-   - `M` y `M'`: Solo expresión génica (sin filtrado y con filtrado de genes)
+   - `M` y `M'`: Solo expresión génica (sin filtrado y con filtrado).
    - `MC` y `M'C`: Expresión + covariables clínicas y técnicas.
-   - Matrices de expresión génica + `always.split.variables`: Modelos con variables confusoras forzadas en los splits
+   - Modelos con forzado con variables forzadas + `always.split.variables`: Modelos con variables confusoras forzadas en los splits
    - `C`: Modelo con solo las variables confusoras
      
 3. Validación
@@ -69,7 +71,7 @@ Esta carpeta contiene el código y los resultados del análisis realizado con da
 
 - El mejor modelo fue `M' + ceradsc`, combinando un subconjunto filtrado de genes con una variable neuropatológica forzada.
 - Los modelos con forzados explícito de las variables neuropatológicas `braaksc` y `ceradsc` superaron en precisión a llos modelos completos (`MC` y `M'C`)
-- El análisis de estabilidad permitió identificar genes como `MTCP1`, `HPCAL1`, `CAMK4` y `MMP24` que se postulan como candidatos robustos con relevancia en la Enfermedad de Alzheimer.
+- El análisis de estabilidad permitió identificar genes como `MTCP1`, `HPCAL1`, `CAMK4` y `MMP24`, con respaldo bibliográfico como posibles biomarcadores de la EA.
 - Se observaron efectos estabilizadores selectivos, algunos genes mejoran su estabilidad solo al introducir variables confusoras específicas, sobre todo `braaksc` y `ceradsc`, lo que sugiere una relación biológica genuina.
 
 ---
