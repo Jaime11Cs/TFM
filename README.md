@@ -56,7 +56,7 @@ cd TFM
 
 ## Autor
 
-## 👨‍💻 Autor
+## Autor
 
 **Jaime Carreto Sánchez**  
 Máster en Bioinformática  
