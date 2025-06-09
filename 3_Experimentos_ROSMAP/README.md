@@ -18,7 +18,7 @@ Esta carpeta contiene el código y los resultados del análisis realizado con da
 - entrenamiento_rosmap.Rmd: Script principal en R Markdown que contiene todo el flujo de análisis: preprocesamiento, filtrado de genes, entrenamiento de modelos y análisis de importancia.
 - entrenamiento_rosmap.html: Versión renderizada del documento anterior.
 - Scripts: Carpeta con funciones auxiliares para entrenamiento de los diferentes modelos en un clúster.
-- Datos: Carpeta que incluye los dos documentos `.rds` que contienen las variables confusoras (ROSMAP_RINPMIAGESEX_covs.rds) y los datos ómicos (ROSMAP_RINPMIAGESEX_resids.rds)
+- Datos: Carpeta que incluye dos archivos `.rds`, uno que las variables confusoras (ROSMAP_RINPMIAGESEX_covs.rds) y otro que contien los datos ómicos (ROSMAP_RINPMIAGESEX_resids.rds).
 
 --- 
 
