@@ -26,7 +26,7 @@ El simulador genera un conjunto de datos sintéticos con las siguientes caracter
 
 - **Variables clínicas (matriz C)**
   - `edad`: variable continua (media = 60; rango 40-85).
-  - `sexo`: binaria, generada desde normal (umbral 0).
+  - `sexo`: binaria, generada a partir de una N(0, 1) con corte en 0.
   - `RIN`: variable técnica continua (media = 6; rango: 0-10).
   - `Lote`: variable categórica con 4 niveles
   
@@ -37,7 +37,7 @@ El simulador genera un conjunto de datos sintéticos con las siguientes caracter
   - Grupo Ruido: 400 genes independientes entre sí respecto a las variables confusoras y la variable objetivo
     
 - **Variable objetivo (Y)**:
-  - Binaria, generada como combinación de genes de los grupos A y B más `edad` y `sexo`
+  - Binaria, generada como combinación de genes de los grupos A y B junto con `edad` y `sexo`
 
 --- 
 
@@ -57,6 +57,7 @@ El simulador genera un conjunto de datos sintéticos con las siguientes caracter
    - Solo expresión génica (**M**, **AB**, **ABD**)
    - Expresión + variables confusoras (**MC**, **AB+C** y **ABD+C**)
    - Modelos forzando el uso de variables confusoras usando `always.split.variables`
+   - Modelo con solo las variables confusoras (**C**)
 3. Validación cruzada de 5 particiones y 15 bootstraps
 4. Evaluación de Balanced Accuracy + IC 95%
 5. Análisis de importancia de variables (`varImp`)
