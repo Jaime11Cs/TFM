@@ -51,11 +51,10 @@ cd TFM
 
 ## Autor
 
+## 👨‍💻 Autor
+
 **Jaime Carreto Sánchez**  
 Máster en Bioinformática  
 Universidad de Murcia
+Correo: jaimecarretosanchez@gmail.com
 Github: @Jaime11Cs
-Universidad [Universidad de Murcia]  
-Correo: jaime.carretos@um.es 
-GitHub: [@Jaime11Cs](https://github.com/Jaime11Cs)
-
