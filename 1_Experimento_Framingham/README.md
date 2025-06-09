@@ -93,4 +93,4 @@ El fichero `framingham.csv` contiene variables clínicas con las siguientes agru
 Para ejecutar el análisis:
 
 ```r
-rmarkdown::render("entrenamiento_cardio.Rmd")
+rmarkdown::render("Entrenamiento_Framingham.Rmd")
