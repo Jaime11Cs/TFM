@@ -19,7 +19,12 @@ analizar su efecto en modelos de Machine Learning bajo un entorno controlado.
 
 ## Motivación
 
-En los modelos lineales clásicos, como la regresión múltiple, el tratamiento de variables confusoras esta bien establecido. Sin embargo, cuando se trabaja con modelos no lineales como ***Random Forest***, especialmente en escenarios de alta dimensionalidad, el manejo de variables confusoras es más complejo. Si una variable confusora está muy correlacionado con variables ómicas, es posible que sea ignorada en los splits del modelo, siendo sustituida por otras variables que enmascaran su efecto real. A esto se suma el hecho de que en contextos ómicos donde el número de predictores puede superar ampliamente el número de muestras, los modelos lineales convencionales suelen eliminar las confusiones por regularización. Por eso surge la siguiente pregunta: ***¿Es posible construir modelos Random Forest que integren correctamente las variables confusoras para maximizar la precisión predictiva y, al mismo tiempo, preservar la interpretabilidad de los genes relevantes?***
+En los modelos lineales clásicos, como la regresión múltiple, el tratamiento de variables confusoras está bien establecido. Sin embargo, cuando se trabaja con modelos no lineales como Random Forest, especialmente en escenarios de alta dimensionalidad, el manejo de variables confusoras es más complejo.
+
+Si una variable confusora está altamente correlacionada con variables ómicas, puede ser ignorada en los splits del modelo, siendo sustituida por predictores que enmascaran su efecto real. Además, en contextos donde el número de predictores supera ampliamente al de muestras, los modelos lineales tienden a eliminar el sesgo por regularización, pero Random Forest no.
+
+Por ello, surge la siguiente pregunta:  
+**¿Es posible construir modelos Random Forest que integren correctamente las variables confusoras para maximizar la precisión predictiva y, al mismo tiempo, preservar la interpretabilidad de los genes relevantes?**
 
 ---
 
@@ -56,5 +61,4 @@ cd TFM
 **Jaime Carreto Sánchez**  
 Máster en Bioinformática  
 Universidad de Murcia
-Correo: jaimecarretosanchez@gmail.com
-Github: @Jaime11Cs
+Correo: jaime.carretos@um.es
