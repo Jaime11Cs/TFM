@@ -56,8 +56,6 @@ cd TFM
 
 ## Autor
 
-## Autor
-
 **Jaime Carreto Sánchez**  
 Máster en Bioinformática  
 Universidad de Murcia
