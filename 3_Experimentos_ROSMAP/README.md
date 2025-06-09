@@ -72,10 +72,13 @@ Esta carpeta contiene el código y los resultados del análisis realizado con da
 - El análisis de estabilidad permitió identificar genes como `MTCP1`, `HPCAL1`, `CAMK4` y `MMP24` que se postulan como candidatos robustos con relevancia en la Enfermedad de Alzheimer.
 - Se observaron efectos estabilizadores selectivos, algunos genes mejoran su estabilidad solo al introducir variables confusoras específicas, sobre todo `braaksc` y `ceradsc`, lo que sugiere una relación biológica genuina.
 
+---
+
 ## Reproducibilidad
 
 ```r
 rmarkdown::render("entrenamiento_rosmap.Rmd")
+``` 
 
 
    
