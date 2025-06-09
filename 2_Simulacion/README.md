@@ -74,8 +74,11 @@ El simulador genera un conjunto de datos sintéticos con las siguientes caracter
 
 ## Reproducibilidad
 
+En un entorno con Python 3 y Jupyter:
+
 ```python
 jupyter nbconvert --execute generador_simulacion.ipynb
 ```
+
 ```r
 rmarkdown::render("analisis_simulacion.Rmd")
