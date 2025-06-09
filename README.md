@@ -31,7 +31,7 @@ Por ello, surge la siguiente pregunta:
 
 ## Estructura del repositorio
 
-- [`1_Experimentos_Cardio/`](./1_Experimentos_Cardio/):  Experimentos de predicción con datos del estudio de Framingham. 
+- [`1_Experimentos_Framingham/`](./1_Experimentos_Framingham/):  Experimentos de predicción con datos del estudio de Framingham. 
 - [`2_Simulacion/`](./2_Simulacion): Generación de datos simulados con estructura causal controlada.
 - [`3_Experimentos_ROSMAP/`](./3_Experimentos_ROSMAP): Experimentos con datos reales transcriptómicos del estudio ROSMAP.
 
