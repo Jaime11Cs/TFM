@@ -14,13 +14,13 @@ Esta carpeta contiene los experimentos realizados con datos clínicos del estudi
 
 ## Contenido
 
-- `entrenamiento_cardio.Rmd`: notebook principal en R Markdown con todo el flujo de análisis.
-- `entrenamiento_cardio.html`: versión HTML exportada del análisis.
+- `Entrenamiento_Framingham.Rmd`: notebook principal en R Markdown con todo el flujo de análisis.
+- `Entrenamiento_Framingham.html`: versión HTML exportada del análisis.
 - `framingham.csv`: datos clínicos reales del estudio Framingham.
 
 ---
 
-## Código principal: `entrenamiento_cardio.Rmd`
+## Código principal: `Entrenamiento_Framingham.Rmd`
 
 1. **Carga y preprocesamiento de datos**
    - Imputación de valores ausentes.
@@ -74,7 +74,6 @@ El fichero `framingham.csv` contiene variables clínicas con las siguientes agru
 
 ## Resultados generados
 
-- Tabla resumen con métricas en test por modelo.
 - Boxplot comparativo de Accuracy entre modelos.
 - Matriz de confusión de test por modelo.
 
