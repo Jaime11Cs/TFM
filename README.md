@@ -24,8 +24,9 @@ En los modelos lineales clásicos, como la regresión múltiple, el tratamiento 
 ---
 
 ## Estructura del repositorio
-- [`1_Simulacion/`](./1_Simulacion): Generación de datos simulados con estructura causal controlada.
-- [`2_Experimentos_Cardio/`](./2_Experimentos_Cardio): Experimentos de predicción con datos del estudio de Framingham.
+
+- [`1_Experimentos_Cardio/`](./1_Experimentos_Cardio/):  Experimentos de predicción con datos del estudio de Framingham. 
+- [`2_Simulacion/`](./2_Simulacion): Generación de datos simulados con estructura causal controlada.
 - [`3_Experimentos_ROSMAP/`](./3_Experimentos_ROSMAP): Experimentos con datos reales transcriptómicos del estudio ROSMAP.
 
 --- 
