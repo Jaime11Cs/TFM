@@ -4,6 +4,7 @@ Este repositorio contiene todo el código, simulaciones y análisis desarrollado
 
 ---
 ## Objetivos
+
 El objetivo principal de este trabajo es comprender el papel de las variables de confusión en modelos
 de Machine Learning no lineales, concretamente en algoritmos del tipo Random Forest. Para ello, se
 aplicarán técnicas de aprendizaje automático sobre datos transcriptómicos reales y simulados para
