@@ -35,6 +35,8 @@ cd TFM
 
 **Jaime Carreto Sánchez**  
 Máster en Bioinformática  
+Universidad de Murcia
+Github: @Jaime11Cs
 Universidad [Universidad de Murcia]  
 Correo: jaime.carretos@um.es 
 GitHub: [@Jaime11Cs](https://github.com/Jaime11Cs)
