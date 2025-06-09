@@ -2883,8 +2883,9 @@ adecuadamente.</p>
 <div id="enfoque-metodológico" class="section level2" number="1.2">
 <h2><span class="header-section-number">1.2</span> Enfoque
 metodológico</h2>
-<p>Para evaluar el impacto de estas variables, se desarrollarán tres
-modelos de Random Forest utilizando <code>ranger</code>:</p>
+<p>Para evaluar el impacto de estas <strong>variables de
+confusión</strong>, se desarrollarán tres modelos de Random Forest
+utilizando <code>ranger</code>:</p>
 <ol style="list-style-type: decimal">
 <li><p><strong>Modelo M</strong>: solo incluye las variables
 (<code>M</code>), es decir, todas las variables del dataset excluyendo
@@ -2895,7 +2896,7 @@ relevantes.</p></li>
 <li><p><strong>Modelo MC</strong>: utiliza todas las variables
 disponibles (<code>M + C</code>). Al incorporar las variables de
 confusión, se espera que mejore sustancialmente el rendimiento del
-modelo.</p></li>
+modelo frente al anterior.</p></li>
 <li><p><strong>Modelo M + always.split(C)</strong>: incluye únicamente
 las variables <code>M</code>, pero forzando que cada una de las
 variables clínicas (<code>C</code>) se utilice como variable de división
@@ -2922,7 +2923,7 @@ configuración inicial</h1>
 <span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a><span class="fu">library</span>(doParallel)</span>
 <span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a><span class="fu">library</span>(dplyr)</span>
 <span id="cb1-6"><a href="#cb1-6" tabindex="-1"></a><span class="fu">library</span>(pROC)</span>
-<span id="cb1-7"><a href="#cb1-7" tabindex="-1"></a><span class="fu">library</span>(DMwR)</span></code></pre></div>
+<span id="cb1-7"><a href="#cb1-7" tabindex="-1"></a><span class="fu">library</span>(DMwR2)</span></code></pre></div>
 <p>Defino mi directorio de trabajo:</p>
 <div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a><span class="fu">setwd</span>(<span class="st">&quot;~/Escritorio/TFM/Primer_boceto&quot;</span>)</span></code></pre></div>
 <p>Fijo una semilla aleatoria para garantizar la reproducibilidad</p>
@@ -2977,8 +2978,8 @@ datos, optamos por imputar los valores ausentes mediante la mediana.</p>
 efectiva</p>
 <div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a><span class="fu">sum</span>(<span class="fu">is.na</span>(mydata_imputado))</span></code></pre></div>
 <pre><code>## [1] 0</code></pre>
-<p>Como se observa vemos que el número de <code>NA</code> es 0, por lo
-que la imputación se ha realizado de manera correcta.</p>
+<p>Como se observa, el número de <code>NA</code> ahora es 0, por lo que
+la imputación se ha realizado de manera correcta.</p>
 </div>
 <div id="preparación-de-los-conjuntos-de-datos" class="section level2" number="3.2">
 <h2><span class="header-section-number">3.2</span> Preparación de los
@@ -2990,11 +2991,11 @@ factor</p>
 <pre><code>## 
 ##   No  Yes 
 ## 3596  644</code></pre>
-<p>Como se observa, la variable a predecir <code>TenYearCHD</code> está
-muy desiquilibrada, el 85% de los datos representa la clase
-<code>No</code> mientras que el 15% restante es el <code>Sí</code> por
-lo tanto antes de entrenar los modelos habrá que hacer un downsampling
-de la clase mayoritaria para que el modelo aprenda de forma óptima.</p>
+<p>La variable a predecir <code>TenYearCHD</code> está muy
+desiquilibrada. El 85% de los datos representa la clase <code>No</code>
+mientras que el 15% restante es el <code>Sí</code> por lo tanto antes de
+entrenar los modelos habrá que hacer un downsampling de la clase
+mayoritaria para que el modelo aprenda de forma óptima.</p>
 <p>Definimos los grupos de variables</p>
 <div class="sourceCode" id="cb15"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" tabindex="-1"></a>clase <span class="ot">&lt;-</span> <span class="st">&quot;TenYearCHD&quot;</span></span>
 <span id="cb15-2"><a href="#cb15-2" tabindex="-1"></a>vars_C <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">&quot;male&quot;</span>, <span class="st">&quot;age&quot;</span>, <span class="st">&quot;education&quot;</span>, <span class="st">&quot;BMI&quot;</span>)</span>
@@ -3034,400 +3035,499 @@ haga de manera adecuada voy a a balancear los datos usando la función
 ##  No Yes 
 ## 516 516</code></pre>
 <p>Como se observa el Downsampling se ha aplicado correctamente y ya
-tenemos los dos valores de la variable clase ajustado y listo para el
-entrenamiento. Una vez echo el Downsampling vamos a entrenar el
-modelo</p>
+tenemos los dos valores de la variable clase ajustados y listos para el
+entrenamiento. Procedo a entrenar el modelo.</p>
 <div class="sourceCode" id="cb20"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1" tabindex="-1"></a>tune_grid <span class="ot">&lt;-</span> <span class="fu">expand.grid</span>(</span>
 <span id="cb20-2"><a href="#cb20-2" tabindex="-1"></a>  <span class="at">mtry =</span> <span class="fu">c</span>(<span class="dv">1</span>,<span class="dv">2</span>,<span class="dv">4</span>,<span class="dv">8</span>,<span class="dv">11</span>),</span>
 <span id="cb20-3"><a href="#cb20-3" tabindex="-1"></a>  <span class="at">splitrule =</span> <span class="st">&quot;gini&quot;</span>,</span>
 <span id="cb20-4"><a href="#cb20-4" tabindex="-1"></a>  <span class="at">min.node.size =</span> <span class="fu">c</span>(<span class="dv">10</span>, <span class="dv">20</span>, <span class="dv">30</span>)</span>
 <span id="cb20-5"><a href="#cb20-5" tabindex="-1"></a>)</span>
 <span id="cb20-6"><a href="#cb20-6" tabindex="-1"></a></span>
-<span id="cb20-7"><a href="#cb20-7" tabindex="-1"></a>control <span class="ot">&lt;-</span> <span class="fu">trainControl</span>(</span>
+<span id="cb20-7"><a href="#cb20-7" tabindex="-1"></a>control_cv <span class="ot">&lt;-</span> <span class="fu">trainControl</span>(</span>
 <span id="cb20-8"><a href="#cb20-8" tabindex="-1"></a>  <span class="at">method =</span> <span class="st">&quot;cv&quot;</span>,</span>
-<span id="cb20-9"><a href="#cb20-9" tabindex="-1"></a>  <span class="at">number =</span> <span class="dv">10</span>,</span>
+<span id="cb20-9"><a href="#cb20-9" tabindex="-1"></a>  <span class="at">number =</span> <span class="dv">5</span>,</span>
 <span id="cb20-10"><a href="#cb20-10" tabindex="-1"></a>  <span class="at">verboseIter =</span> <span class="cn">FALSE</span>)</span>
 <span id="cb20-11"><a href="#cb20-11" tabindex="-1"></a></span>
-<span id="cb20-12"><a href="#cb20-12" tabindex="-1"></a>modelo_M <span class="ot">&lt;-</span> <span class="fu">train</span>(</span>
+<span id="cb20-12"><a href="#cb20-12" tabindex="-1"></a>modelo_cv_M <span class="ot">&lt;-</span> <span class="fu">train</span>(</span>
 <span id="cb20-13"><a href="#cb20-13" tabindex="-1"></a>  TenYearCHD <span class="sc">~</span> .,</span>
 <span id="cb20-14"><a href="#cb20-14" tabindex="-1"></a>  <span class="at">data =</span> train_dataM,</span>
 <span id="cb20-15"><a href="#cb20-15" tabindex="-1"></a>  <span class="at">method =</span> <span class="st">&quot;ranger&quot;</span>,</span>
 <span id="cb20-16"><a href="#cb20-16" tabindex="-1"></a>  <span class="at">tuneGrid =</span> tune_grid,</span>
 <span id="cb20-17"><a href="#cb20-17" tabindex="-1"></a>  <span class="at">metric =</span> <span class="st">&quot;Accuracy&quot;</span>,</span>
-<span id="cb20-18"><a href="#cb20-18" tabindex="-1"></a>  <span class="at">trControl =</span> control</span>
-<span id="cb20-19"><a href="#cb20-19" tabindex="-1"></a>)</span></code></pre></div>
+<span id="cb20-18"><a href="#cb20-18" tabindex="-1"></a>  <span class="at">trControl =</span> control_cv,</span>
+<span id="cb20-19"><a href="#cb20-19" tabindex="-1"></a>  <span class="at">max.depth=</span><span class="dv">10</span></span>
+<span id="cb20-20"><a href="#cb20-20" tabindex="-1"></a>)</span></code></pre></div>
+<p>En el código anterior optimizo los hiperparámetros usando un Cross
+validation de 5. Eligo la mejor combinación de hiperparámetros en base a
+la Accuracy</p>
+<div class="sourceCode" id="cb21"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb21-1"><a href="#cb21-1" tabindex="-1"></a>mejores_hiperparametros <span class="ot">&lt;-</span> modelo_cv_M<span class="sc">$</span>bestTune</span>
+<span id="cb21-2"><a href="#cb21-2" tabindex="-1"></a><span class="fu">print</span>(mejores_hiperparametros)</span></code></pre></div>
+<pre><code>##   mtry splitrule min.node.size
+## 1    1      gini            10</code></pre>
+<p>Ahora entreno con bootstrap = 15</p>
+<div class="sourceCode" id="cb23"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb23-1"><a href="#cb23-1" tabindex="-1"></a>control_boot <span class="ot">&lt;-</span> <span class="fu">trainControl</span>(</span>
+<span id="cb23-2"><a href="#cb23-2" tabindex="-1"></a>  <span class="at">method=</span> <span class="st">&quot;boot&quot;</span>,</span>
+<span id="cb23-3"><a href="#cb23-3" tabindex="-1"></a>  <span class="at">number =</span> <span class="dv">15</span>,</span>
+<span id="cb23-4"><a href="#cb23-4" tabindex="-1"></a>  <span class="at">classProbs=</span> <span class="cn">TRUE</span>,</span>
+<span id="cb23-5"><a href="#cb23-5" tabindex="-1"></a>)</span>
+<span id="cb23-6"><a href="#cb23-6" tabindex="-1"></a></span>
+<span id="cb23-7"><a href="#cb23-7" tabindex="-1"></a>modelo_bootM <span class="ot">&lt;-</span> <span class="fu">train</span>(</span>
+<span id="cb23-8"><a href="#cb23-8" tabindex="-1"></a>  TenYearCHD <span class="sc">~</span> .,</span>
+<span id="cb23-9"><a href="#cb23-9" tabindex="-1"></a>  <span class="at">data =</span> train_dataM,</span>
+<span id="cb23-10"><a href="#cb23-10" tabindex="-1"></a>  <span class="at">method=</span> <span class="st">&quot;ranger&quot;</span>,</span>
+<span id="cb23-11"><a href="#cb23-11" tabindex="-1"></a>  <span class="at">tuneGrid=</span> mejores_hiperparametros,</span>
+<span id="cb23-12"><a href="#cb23-12" tabindex="-1"></a>  <span class="at">metric =</span> <span class="st">&quot;Accuracy&quot;</span>,</span>
+<span id="cb23-13"><a href="#cb23-13" tabindex="-1"></a>  <span class="at">trControl=</span> control_boot</span>
+<span id="cb23-14"><a href="#cb23-14" tabindex="-1"></a>)</span></code></pre></div>
+<div class="sourceCode" id="cb24"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb24-1"><a href="#cb24-1" tabindex="-1"></a>resultado_boot <span class="ot">&lt;-</span> modelo_bootM<span class="sc">$</span>resample</span>
+<span id="cb24-2"><a href="#cb24-2" tabindex="-1"></a>media <span class="ot">&lt;-</span> <span class="fu">mean</span>(resultado_boot<span class="sc">$</span>Accuracy)</span>
+<span id="cb24-3"><a href="#cb24-3" tabindex="-1"></a>ic <span class="ot">&lt;-</span> <span class="fu">quantile</span>(resultado_boot<span class="sc">$</span>Accuracy, <span class="at">probs =</span> <span class="fu">c</span>(<span class="fl">0.025</span>, <span class="fl">0.975</span>))</span>
+<span id="cb24-4"><a href="#cb24-4" tabindex="-1"></a></span>
+<span id="cb24-5"><a href="#cb24-5" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Media Accuracy:&quot;</span>, <span class="fu">round</span>(media, <span class="dv">3</span>), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span></code></pre></div>
+<pre><code>## Media Accuracy: 0.624</code></pre>
+<div class="sourceCode" id="cb26"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb26-1"><a href="#cb26-1" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;IC 95%:&quot;</span>, <span class="fu">round</span>(ic[<span class="dv">1</span>], <span class="dv">3</span>), <span class="st">&#39;-&#39;</span>, <span class="fu">round</span>(ic[<span class="dv">2</span>], <span class="dv">3</span>), <span class="st">&#39;</span><span class="sc">\n</span><span class="st">&#39;</span>)</span></code></pre></div>
+<pre><code>## IC 95%: 0.603 - 0.651</code></pre>
 </div>
 <div id="modelo-random-forest-con-la-matriz-mc" class="section level2" number="4.2">
 <h2><span class="header-section-number">4.2</span> Modelo Random Forest
 con la matriz MC</h2>
 <p>Divido los datos en entrenamiento y test</p>
-<div class="sourceCode" id="cb21"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb21-1"><a href="#cb21-1" tabindex="-1"></a>train_index <span class="ot">&lt;-</span> <span class="fu">createDataPartition</span>(df_MC<span class="sc">$</span>TenYearCHD, <span class="at">p=</span> <span class="fl">0.8</span>, <span class="at">list =</span> <span class="cn">FALSE</span>)</span>
-<span id="cb21-2"><a href="#cb21-2" tabindex="-1"></a>train_dataMC <span class="ot">&lt;-</span> df_MC[train_index,]</span>
-<span id="cb21-3"><a href="#cb21-3" tabindex="-1"></a>test_dataMC <span class="ot">&lt;-</span> df_MC[<span class="sc">-</span>train_index,]</span></code></pre></div>
+<div class="sourceCode" id="cb28"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb28-1"><a href="#cb28-1" tabindex="-1"></a>train_dataMC <span class="ot">&lt;-</span> df_MC[train_index,]</span>
+<span id="cb28-2"><a href="#cb28-2" tabindex="-1"></a>test_dataMC <span class="ot">&lt;-</span> df_MC[<span class="sc">-</span>train_index,]</span></code></pre></div>
 <p>Una vez divididos hago el balanceo de la variable clase</p>
-<div class="sourceCode" id="cb22"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1" tabindex="-1"></a>train_dataMC <span class="ot">&lt;-</span> <span class="fu">downSample</span>(</span>
-<span id="cb22-2"><a href="#cb22-2" tabindex="-1"></a>  <span class="at">x=</span>train_dataMC[, <span class="sc">-</span><span class="fu">ncol</span>(train_dataMC)],</span>
-<span id="cb22-3"><a href="#cb22-3" tabindex="-1"></a>  <span class="at">y=</span> train_dataMC<span class="sc">$</span>TenYearCHD,</span>
-<span id="cb22-4"><a href="#cb22-4" tabindex="-1"></a>  <span class="at">yname=</span> <span class="st">&quot;TenYearCHD&quot;</span></span>
-<span id="cb22-5"><a href="#cb22-5" tabindex="-1"></a>)</span>
-<span id="cb22-6"><a href="#cb22-6" tabindex="-1"></a><span class="fu">table</span>(train_dataMC<span class="sc">$</span>TenYearCHD)</span></code></pre></div>
+<div class="sourceCode" id="cb29"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb29-1"><a href="#cb29-1" tabindex="-1"></a>train_dataMC <span class="ot">&lt;-</span> <span class="fu">downSample</span>(</span>
+<span id="cb29-2"><a href="#cb29-2" tabindex="-1"></a>  <span class="at">x=</span>train_dataMC[, <span class="sc">-</span><span class="fu">ncol</span>(train_dataMC)],</span>
+<span id="cb29-3"><a href="#cb29-3" tabindex="-1"></a>  <span class="at">y=</span> train_dataMC<span class="sc">$</span>TenYearCHD,</span>
+<span id="cb29-4"><a href="#cb29-4" tabindex="-1"></a>  <span class="at">yname=</span> <span class="st">&quot;TenYearCHD&quot;</span></span>
+<span id="cb29-5"><a href="#cb29-5" tabindex="-1"></a>)</span>
+<span id="cb29-6"><a href="#cb29-6" tabindex="-1"></a><span class="fu">table</span>(train_dataMC<span class="sc">$</span>TenYearCHD)</span></code></pre></div>
 <pre><code>## 
 ##  No Yes 
 ## 516 516</code></pre>
 <p>Como se observa, el downsampling se ha realizado de manera
 correcta.</p>
-<div class="sourceCode" id="cb24"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb24-1"><a href="#cb24-1" tabindex="-1"></a>tune_grid <span class="ot">&lt;-</span> <span class="fu">expand.grid</span>(</span>
-<span id="cb24-2"><a href="#cb24-2" tabindex="-1"></a>  <span class="at">mtry =</span> <span class="fu">c</span>(<span class="dv">1</span>,<span class="dv">2</span>,<span class="dv">4</span>,<span class="dv">8</span>,<span class="dv">11</span>),</span>
-<span id="cb24-3"><a href="#cb24-3" tabindex="-1"></a>  <span class="at">splitrule =</span> <span class="st">&quot;gini&quot;</span>,</span>
-<span id="cb24-4"><a href="#cb24-4" tabindex="-1"></a>  <span class="at">min.node.size =</span> <span class="fu">c</span>(<span class="dv">10</span>, <span class="dv">20</span>, <span class="dv">30</span>)</span>
-<span id="cb24-5"><a href="#cb24-5" tabindex="-1"></a>)</span>
-<span id="cb24-6"><a href="#cb24-6" tabindex="-1"></a></span>
-<span id="cb24-7"><a href="#cb24-7" tabindex="-1"></a>control <span class="ot">&lt;-</span> <span class="fu">trainControl</span>(</span>
-<span id="cb24-8"><a href="#cb24-8" tabindex="-1"></a>  <span class="at">method =</span> <span class="st">&quot;cv&quot;</span>,</span>
-<span id="cb24-9"><a href="#cb24-9" tabindex="-1"></a>  <span class="at">number =</span> <span class="dv">10</span>,</span>
-<span id="cb24-10"><a href="#cb24-10" tabindex="-1"></a>  <span class="at">verboseIter =</span> <span class="cn">FALSE</span>)</span>
-<span id="cb24-11"><a href="#cb24-11" tabindex="-1"></a></span>
-<span id="cb24-12"><a href="#cb24-12" tabindex="-1"></a>modelo_MC <span class="ot">&lt;-</span> <span class="fu">train</span>(</span>
-<span id="cb24-13"><a href="#cb24-13" tabindex="-1"></a>  TenYearCHD <span class="sc">~</span> .,</span>
-<span id="cb24-14"><a href="#cb24-14" tabindex="-1"></a>  <span class="at">data =</span> train_dataMC,</span>
-<span id="cb24-15"><a href="#cb24-15" tabindex="-1"></a>  <span class="at">method =</span> <span class="st">&quot;ranger&quot;</span>,</span>
-<span id="cb24-16"><a href="#cb24-16" tabindex="-1"></a>  <span class="at">tuneGrid =</span> tune_grid,</span>
-<span id="cb24-17"><a href="#cb24-17" tabindex="-1"></a>  <span class="at">metric =</span> <span class="st">&quot;Accuracy&quot;</span>,</span>
-<span id="cb24-18"><a href="#cb24-18" tabindex="-1"></a>  <span class="at">trControl =</span> control</span>
-<span id="cb24-19"><a href="#cb24-19" tabindex="-1"></a>)</span></code></pre></div>
+<div class="sourceCode" id="cb31"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb31-1"><a href="#cb31-1" tabindex="-1"></a>tune_grid <span class="ot">&lt;-</span> <span class="fu">expand.grid</span>(</span>
+<span id="cb31-2"><a href="#cb31-2" tabindex="-1"></a>  <span class="at">mtry =</span> <span class="fu">c</span>(<span class="dv">1</span>,<span class="dv">2</span>,<span class="dv">4</span>,<span class="dv">8</span>,<span class="dv">11</span>),</span>
+<span id="cb31-3"><a href="#cb31-3" tabindex="-1"></a>  <span class="at">splitrule =</span> <span class="st">&quot;gini&quot;</span>,</span>
+<span id="cb31-4"><a href="#cb31-4" tabindex="-1"></a>  <span class="at">min.node.size =</span> <span class="fu">c</span>(<span class="dv">10</span>, <span class="dv">20</span>, <span class="dv">30</span>)</span>
+<span id="cb31-5"><a href="#cb31-5" tabindex="-1"></a>)</span>
+<span id="cb31-6"><a href="#cb31-6" tabindex="-1"></a></span>
+<span id="cb31-7"><a href="#cb31-7" tabindex="-1"></a>control <span class="ot">&lt;-</span> <span class="fu">trainControl</span>(</span>
+<span id="cb31-8"><a href="#cb31-8" tabindex="-1"></a>  <span class="at">method =</span> <span class="st">&quot;cv&quot;</span>,</span>
+<span id="cb31-9"><a href="#cb31-9" tabindex="-1"></a>  <span class="at">number =</span> <span class="dv">5</span>,</span>
+<span id="cb31-10"><a href="#cb31-10" tabindex="-1"></a>  <span class="at">verboseIter =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb31-11"><a href="#cb31-11" tabindex="-1"></a></span>
+<span id="cb31-12"><a href="#cb31-12" tabindex="-1"></a>modelo_cv_MC <span class="ot">&lt;-</span> <span class="fu">train</span>(</span>
+<span id="cb31-13"><a href="#cb31-13" tabindex="-1"></a>  TenYearCHD <span class="sc">~</span> .,</span>
+<span id="cb31-14"><a href="#cb31-14" tabindex="-1"></a>  <span class="at">data =</span> train_dataMC,</span>
+<span id="cb31-15"><a href="#cb31-15" tabindex="-1"></a>  <span class="at">method =</span> <span class="st">&quot;ranger&quot;</span>,</span>
+<span id="cb31-16"><a href="#cb31-16" tabindex="-1"></a>  <span class="at">tuneGrid =</span> tune_grid,</span>
+<span id="cb31-17"><a href="#cb31-17" tabindex="-1"></a>  <span class="at">metric =</span> <span class="st">&quot;Accuracy&quot;</span>,</span>
+<span id="cb31-18"><a href="#cb31-18" tabindex="-1"></a>  <span class="at">trControl =</span> control,</span>
+<span id="cb31-19"><a href="#cb31-19" tabindex="-1"></a>  <span class="at">max.depth=</span><span class="dv">10</span></span>
+<span id="cb31-20"><a href="#cb31-20" tabindex="-1"></a>)</span></code></pre></div>
+<p>Eligo la mejor combinación de hiperparámetros en base a la
+Accuracy</p>
+<div class="sourceCode" id="cb32"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb32-1"><a href="#cb32-1" tabindex="-1"></a>mejores_hiperparametros <span class="ot">&lt;-</span> modelo_cv_MC<span class="sc">$</span>bestTune</span>
+<span id="cb32-2"><a href="#cb32-2" tabindex="-1"></a><span class="fu">print</span>(mejores_hiperparametros)</span></code></pre></div>
+<pre><code>##   mtry splitrule min.node.size
+## 6    2      gini            30</code></pre>
+<p>Ahora entreno con bootstrap = 15</p>
+<div class="sourceCode" id="cb34"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb34-1"><a href="#cb34-1" tabindex="-1"></a>control_boot <span class="ot">&lt;-</span> <span class="fu">trainControl</span>(</span>
+<span id="cb34-2"><a href="#cb34-2" tabindex="-1"></a>  <span class="at">method=</span> <span class="st">&quot;boot&quot;</span>,</span>
+<span id="cb34-3"><a href="#cb34-3" tabindex="-1"></a>  <span class="at">number =</span> <span class="dv">15</span>,</span>
+<span id="cb34-4"><a href="#cb34-4" tabindex="-1"></a>  <span class="at">classProbs=</span> <span class="cn">TRUE</span>,</span>
+<span id="cb34-5"><a href="#cb34-5" tabindex="-1"></a>)</span>
+<span id="cb34-6"><a href="#cb34-6" tabindex="-1"></a></span>
+<span id="cb34-7"><a href="#cb34-7" tabindex="-1"></a>modelo_bootMC <span class="ot">&lt;-</span> <span class="fu">train</span>(</span>
+<span id="cb34-8"><a href="#cb34-8" tabindex="-1"></a>  TenYearCHD <span class="sc">~</span> .,</span>
+<span id="cb34-9"><a href="#cb34-9" tabindex="-1"></a>  <span class="at">data =</span> train_dataMC,</span>
+<span id="cb34-10"><a href="#cb34-10" tabindex="-1"></a>  <span class="at">method=</span> <span class="st">&quot;ranger&quot;</span>,</span>
+<span id="cb34-11"><a href="#cb34-11" tabindex="-1"></a>  <span class="at">tuneGrid=</span> mejores_hiperparametros,</span>
+<span id="cb34-12"><a href="#cb34-12" tabindex="-1"></a>  <span class="at">metric =</span> <span class="st">&quot;Accuracy&quot;</span>,</span>
+<span id="cb34-13"><a href="#cb34-13" tabindex="-1"></a>  <span class="at">trControl=</span> control_boot</span>
+<span id="cb34-14"><a href="#cb34-14" tabindex="-1"></a>)</span></code></pre></div>
+<div class="sourceCode" id="cb35"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb35-1"><a href="#cb35-1" tabindex="-1"></a>resultado_boot_MC <span class="ot">&lt;-</span> modelo_bootMC<span class="sc">$</span>resample</span>
+<span id="cb35-2"><a href="#cb35-2" tabindex="-1"></a>media <span class="ot">&lt;-</span> <span class="fu">mean</span>(resultado_boot_MC<span class="sc">$</span>Accuracy)</span>
+<span id="cb35-3"><a href="#cb35-3" tabindex="-1"></a>ic <span class="ot">&lt;-</span> <span class="fu">quantile</span>(resultado_boot_MC<span class="sc">$</span>Accuracy, <span class="at">probs =</span> <span class="fu">c</span>(<span class="fl">0.025</span>, <span class="fl">0.975</span>))</span>
+<span id="cb35-4"><a href="#cb35-4" tabindex="-1"></a></span>
+<span id="cb35-5"><a href="#cb35-5" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Media Accuracy:&quot;</span>, <span class="fu">round</span>(media, <span class="dv">3</span>), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span></code></pre></div>
+<pre><code>## Media Accuracy: 0.648</code></pre>
+<div class="sourceCode" id="cb37"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb37-1"><a href="#cb37-1" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;IC 95%:&quot;</span>, <span class="fu">round</span>(ic[<span class="dv">1</span>], <span class="dv">3</span>), <span class="st">&#39;-&#39;</span>, <span class="fu">round</span>(ic[<span class="dv">2</span>], <span class="dv">3</span>), <span class="st">&#39;</span><span class="sc">\n</span><span class="st">&#39;</span>)</span></code></pre></div>
+<pre><code>## IC 95%: 0.596 - 0.679</code></pre>
 </div>
 <div id="modelo-de-random-forest-usando-always.split.variables" class="section level2" number="4.3">
 <h2><span class="header-section-number">4.3</span> Modelo de Random
 Forest usando <code>always.split.variables</code></h2>
-<div class="sourceCode" id="cb25"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb25-1"><a href="#cb25-1" tabindex="-1"></a>dataset_con_split <span class="ot">&lt;-</span> <span class="fu">list</span>()</span>
-<span id="cb25-2"><a href="#cb25-2" tabindex="-1"></a></span>
-<span id="cb25-3"><a href="#cb25-3" tabindex="-1"></a><span class="cf">for</span> (var_c <span class="cf">in</span> vars_C) {</span>
-<span id="cb25-4"><a href="#cb25-4" tabindex="-1"></a>  df_tmp <span class="ot">&lt;-</span> <span class="fu">cbind</span>(</span>
-<span id="cb25-5"><a href="#cb25-5" tabindex="-1"></a>    M,</span>
-<span id="cb25-6"><a href="#cb25-6" tabindex="-1"></a>    <span class="at">var_c_value =</span> mydata_imputado[[var_c]],</span>
-<span id="cb25-7"><a href="#cb25-7" tabindex="-1"></a>    <span class="at">TenYearCHD =</span> mydata_imputado<span class="sc">$</span>TenYearCHD</span>
-<span id="cb25-8"><a href="#cb25-8" tabindex="-1"></a>  )</span>
-<span id="cb25-9"><a href="#cb25-9" tabindex="-1"></a>  <span class="fu">colnames</span>(df_tmp)[<span class="fu">ncol</span>(df_tmp)<span class="sc">-</span><span class="dv">1</span>] <span class="ot">&lt;-</span> var_c</span>
-<span id="cb25-10"><a href="#cb25-10" tabindex="-1"></a>  </span>
-<span id="cb25-11"><a href="#cb25-11" tabindex="-1"></a>  train_tmp <span class="ot">&lt;-</span> df_tmp[train_index,]</span>
-<span id="cb25-12"><a href="#cb25-12" tabindex="-1"></a>  test_tmp <span class="ot">&lt;-</span> df_tmp[<span class="sc">-</span>train_index,]</span>
-<span id="cb25-13"><a href="#cb25-13" tabindex="-1"></a>  </span>
-<span id="cb25-14"><a href="#cb25-14" tabindex="-1"></a>  train_tmp <span class="ot">&lt;-</span> <span class="fu">downSample</span>(</span>
-<span id="cb25-15"><a href="#cb25-15" tabindex="-1"></a>    <span class="at">x=</span> train_tmp[, <span class="sc">-</span><span class="fu">ncol</span>(train_tmp)],</span>
-<span id="cb25-16"><a href="#cb25-16" tabindex="-1"></a>    <span class="at">y=</span> train_tmp<span class="sc">$</span>TenYearCHD,</span>
-<span id="cb25-17"><a href="#cb25-17" tabindex="-1"></a>    <span class="at">yname =</span> <span class="st">&quot;TenYearCHD&quot;</span></span>
-<span id="cb25-18"><a href="#cb25-18" tabindex="-1"></a>  )</span>
-<span id="cb25-19"><a href="#cb25-19" tabindex="-1"></a>  </span>
-<span id="cb25-20"><a href="#cb25-20" tabindex="-1"></a>  dataset_con_split[[var_c]] <span class="ot">&lt;-</span> <span class="fu">list</span>(</span>
-<span id="cb25-21"><a href="#cb25-21" tabindex="-1"></a>    <span class="at">train=</span> train_tmp,</span>
-<span id="cb25-22"><a href="#cb25-22" tabindex="-1"></a>    <span class="at">test=</span> test_tmp</span>
-<span id="cb25-23"><a href="#cb25-23" tabindex="-1"></a>  )</span>
-<span id="cb25-24"><a href="#cb25-24" tabindex="-1"></a>}</span>
-<span id="cb25-25"><a href="#cb25-25" tabindex="-1"></a><span class="fu">table</span>(train_tmp<span class="sc">$</span>TenYearCHD)</span></code></pre></div>
+<div class="sourceCode" id="cb39"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb39-1"><a href="#cb39-1" tabindex="-1"></a>dataset_con_split <span class="ot">&lt;-</span> <span class="fu">list</span>()</span>
+<span id="cb39-2"><a href="#cb39-2" tabindex="-1"></a></span>
+<span id="cb39-3"><a href="#cb39-3" tabindex="-1"></a><span class="cf">for</span> (var_c <span class="cf">in</span> vars_C) {</span>
+<span id="cb39-4"><a href="#cb39-4" tabindex="-1"></a>  df_tmp <span class="ot">&lt;-</span> <span class="fu">cbind</span>(</span>
+<span id="cb39-5"><a href="#cb39-5" tabindex="-1"></a>    M,</span>
+<span id="cb39-6"><a href="#cb39-6" tabindex="-1"></a>    <span class="at">var_c_value =</span> mydata_imputado[[var_c]],</span>
+<span id="cb39-7"><a href="#cb39-7" tabindex="-1"></a>    <span class="at">TenYearCHD =</span> mydata_imputado<span class="sc">$</span>TenYearCHD</span>
+<span id="cb39-8"><a href="#cb39-8" tabindex="-1"></a>  )</span>
+<span id="cb39-9"><a href="#cb39-9" tabindex="-1"></a>  <span class="fu">colnames</span>(df_tmp)[<span class="fu">ncol</span>(df_tmp)<span class="sc">-</span><span class="dv">1</span>] <span class="ot">&lt;-</span> var_c</span>
+<span id="cb39-10"><a href="#cb39-10" tabindex="-1"></a>  </span>
+<span id="cb39-11"><a href="#cb39-11" tabindex="-1"></a>  train_tmp <span class="ot">&lt;-</span> df_tmp[train_index,]</span>
+<span id="cb39-12"><a href="#cb39-12" tabindex="-1"></a>  test_tmp <span class="ot">&lt;-</span> df_tmp[<span class="sc">-</span>train_index,]</span>
+<span id="cb39-13"><a href="#cb39-13" tabindex="-1"></a>  </span>
+<span id="cb39-14"><a href="#cb39-14" tabindex="-1"></a>  train_tmp <span class="ot">&lt;-</span> <span class="fu">downSample</span>(</span>
+<span id="cb39-15"><a href="#cb39-15" tabindex="-1"></a>    <span class="at">x=</span> train_tmp[, <span class="sc">-</span><span class="fu">ncol</span>(train_tmp)],</span>
+<span id="cb39-16"><a href="#cb39-16" tabindex="-1"></a>    <span class="at">y=</span> train_tmp<span class="sc">$</span>TenYearCHD,</span>
+<span id="cb39-17"><a href="#cb39-17" tabindex="-1"></a>    <span class="at">yname =</span> <span class="st">&quot;TenYearCHD&quot;</span></span>
+<span id="cb39-18"><a href="#cb39-18" tabindex="-1"></a>  )</span>
+<span id="cb39-19"><a href="#cb39-19" tabindex="-1"></a>  </span>
+<span id="cb39-20"><a href="#cb39-20" tabindex="-1"></a>  dataset_con_split[[var_c]] <span class="ot">&lt;-</span> <span class="fu">list</span>(</span>
+<span id="cb39-21"><a href="#cb39-21" tabindex="-1"></a>    <span class="at">train=</span> train_tmp,</span>
+<span id="cb39-22"><a href="#cb39-22" tabindex="-1"></a>    <span class="at">test=</span> test_tmp</span>
+<span id="cb39-23"><a href="#cb39-23" tabindex="-1"></a>  )</span>
+<span id="cb39-24"><a href="#cb39-24" tabindex="-1"></a>}</span>
+<span id="cb39-25"><a href="#cb39-25" tabindex="-1"></a><span class="fu">table</span>(train_tmp<span class="sc">$</span>TenYearCHD)</span></code></pre></div>
 <pre><code>## 
 ##  No Yes 
 ## 516 516</code></pre>
 <p>Como se observa, el balanceo se ha realizado de manera correcta.
 Ahora voy a pasar a entrenar al modelo.</p>
-<div class="sourceCode" id="cb27"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb27-1"><a href="#cb27-1" tabindex="-1"></a>tune_grid <span class="ot">&lt;-</span> <span class="fu">expand.grid</span>(</span>
-<span id="cb27-2"><a href="#cb27-2" tabindex="-1"></a>  <span class="at">mtry =</span> <span class="fu">c</span>(<span class="dv">1</span>,<span class="dv">2</span>,<span class="dv">4</span>,<span class="dv">8</span>,<span class="dv">11</span>),</span>
-<span id="cb27-3"><a href="#cb27-3" tabindex="-1"></a>  <span class="at">splitrule =</span> <span class="st">&quot;gini&quot;</span>,</span>
-<span id="cb27-4"><a href="#cb27-4" tabindex="-1"></a>  <span class="at">min.node.size =</span> <span class="fu">c</span>(<span class="dv">10</span>, <span class="dv">20</span>, <span class="dv">30</span>)</span>
-<span id="cb27-5"><a href="#cb27-5" tabindex="-1"></a>)</span>
-<span id="cb27-6"><a href="#cb27-6" tabindex="-1"></a></span>
-<span id="cb27-7"><a href="#cb27-7" tabindex="-1"></a>control <span class="ot">&lt;-</span> <span class="fu">trainControl</span>(</span>
-<span id="cb27-8"><a href="#cb27-8" tabindex="-1"></a>  <span class="at">method =</span> <span class="st">&quot;cv&quot;</span>,</span>
-<span id="cb27-9"><a href="#cb27-9" tabindex="-1"></a>  <span class="at">number =</span> <span class="dv">10</span>,</span>
-<span id="cb27-10"><a href="#cb27-10" tabindex="-1"></a>  <span class="at">verboseIter =</span> <span class="cn">FALSE</span>)</span>
-<span id="cb27-11"><a href="#cb27-11" tabindex="-1"></a></span>
-<span id="cb27-12"><a href="#cb27-12" tabindex="-1"></a>modelo_split <span class="ot">&lt;-</span> <span class="fu">list</span>()</span>
-<span id="cb27-13"><a href="#cb27-13" tabindex="-1"></a><span class="cf">for</span> (var_c <span class="cf">in</span> <span class="fu">names</span>(dataset_con_split)){</span>
-<span id="cb27-14"><a href="#cb27-14" tabindex="-1"></a></span>
-<span id="cb27-15"><a href="#cb27-15" tabindex="-1"></a>  modeloSplit <span class="ot">&lt;-</span> <span class="fu">train</span> (</span>
-<span id="cb27-16"><a href="#cb27-16" tabindex="-1"></a>    TenYearCHD <span class="sc">~</span> .,</span>
-<span id="cb27-17"><a href="#cb27-17" tabindex="-1"></a>    <span class="at">data =</span> dataset_con_split[[var_c]]<span class="sc">$</span>train,</span>
-<span id="cb27-18"><a href="#cb27-18" tabindex="-1"></a>    <span class="at">method=</span><span class="st">&quot;ranger&quot;</span>,</span>
-<span id="cb27-19"><a href="#cb27-19" tabindex="-1"></a>    <span class="at">tuneGrid=</span>tune_grid,</span>
-<span id="cb27-20"><a href="#cb27-20" tabindex="-1"></a>    <span class="at">trControl=</span>control,</span>
-<span id="cb27-21"><a href="#cb27-21" tabindex="-1"></a>    <span class="at">metric=</span><span class="st">&quot;Accuracy&quot;</span>,</span>
-<span id="cb27-22"><a href="#cb27-22" tabindex="-1"></a>    <span class="at">always.split.variables=</span> var_c</span>
-<span id="cb27-23"><a href="#cb27-23" tabindex="-1"></a>  )</span>
-<span id="cb27-24"><a href="#cb27-24" tabindex="-1"></a>  </span>
-<span id="cb27-25"><a href="#cb27-25" tabindex="-1"></a>modelo_split[[var_c]] <span class="ot">&lt;-</span> modeloSplit</span>
-<span id="cb27-26"><a href="#cb27-26" tabindex="-1"></a>}</span></code></pre></div>
-</div>
-</div>
-<div id="resultados-de-los-modelos" class="section level1" number="5">
-<h1><span class="header-section-number">5</span> Resultados de los
-Modelos</h1>
-<div id="resultados-rf-con-dataframe-m" class="section level2" number="5.1">
-<h2><span class="header-section-number">5.1</span> Resultados RF con
-Dataframe M</h2>
-<p>Imprimo los resultados del entrenamiento del modelo junto con los
-mejores hiperparámetros</p>
-<div class="sourceCode" id="cb28"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb28-1"><a href="#cb28-1" tabindex="-1"></a>modelo_M<span class="sc">$</span>results</span></code></pre></div>
-<div data-pagedtable="false">
-<script data-pagedtable-source type="application/json">
-{"columns":[{"label":[""],"name":["_rn_"],"type":[""],"align":["left"]},{"label":["mtry"],"name":[1],"type":["dbl"],"align":["right"]},{"label":["splitrule"],"name":[2],"type":["fct"],"align":["left"]},{"label":["min.node.size"],"name":[3],"type":["dbl"],"align":["right"]},{"label":["Accuracy"],"name":[4],"type":["dbl"],"align":["right"]},{"label":["Kappa"],"name":[5],"type":["dbl"],"align":["right"]},{"label":["AccuracySD"],"name":[6],"type":["dbl"],"align":["right"]},{"label":["KappaSD"],"name":[7],"type":["dbl"],"align":["right"]}],"data":[{"1":"1","2":"gini","3":"10","4":"0.6269837","5":"0.2540520","6":"0.04814806","7":"0.09618539","_rn_":"1"},{"1":"1","2":"gini","3":"20","4":"0.6308296","5":"0.2617671","6":"0.04579298","7":"0.09149949","_rn_":"2"},{"1":"1","2":"gini","3":"30","4":"0.6308487","5":"0.2617471","6":"0.04509178","7":"0.09011416","_rn_":"3"},{"1":"2","2":"gini","3":"10","4":"0.6172279","5":"0.2343073","6":"0.04796198","7":"0.09596499","_rn_":"4"},{"1":"2","2":"gini","3":"20","4":"0.6249766","5":"0.2499551","6":"0.04550982","7":"0.09100234","_rn_":"5"},{"1":"2","2":"gini","3":"30","4":"0.6308679","5":"0.2616894","6":"0.04585400","7":"0.09175296","_rn_":"6"},{"1":"4","2":"gini","3":"10","4":"0.6106009","5":"0.2210036","6":"0.04286008","7":"0.08579342","_rn_":"7"},{"1":"4","2":"gini","3":"20","4":"0.6096112","5":"0.2189226","6":"0.03966162","7":"0.07939713","_rn_":"8"},{"1":"4","2":"gini","3":"30","4":"0.6212719","5":"0.2424171","6":"0.05101022","7":"0.10225384","_rn_":"9"},{"1":"8","2":"gini","3":"10","4":"0.6027774","5":"0.2052809","6":"0.03666417","7":"0.07356879","_rn_":"10"},{"1":"8","2":"gini","3":"20","4":"0.6144288","5":"0.2287248","6":"0.04714431","7":"0.09458032","_rn_":"11"},{"1":"8","2":"gini","3":"30","4":"0.6153617","5":"0.2305595","6":"0.03902644","7":"0.07826638","_rn_":"12"},{"1":"11","2":"gini","3":"10","4":"0.6095552","5":"0.2189155","6":"0.03953058","7":"0.07929314","_rn_":"13"},{"1":"11","2":"gini","3":"20","4":"0.6086875","5":"0.2172145","6":"0.03823769","7":"0.07663617","_rn_":"14"},{"1":"11","2":"gini","3":"30","4":"0.6057374","5":"0.2112920","6":"0.05023441","7":"0.10065210","_rn_":"15"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
-  </script>
-</div>
-<div class="sourceCode" id="cb29"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb29-1"><a href="#cb29-1" tabindex="-1"></a>modelo_M<span class="sc">$</span>bestTune</span></code></pre></div>
-<div data-pagedtable="false">
-<script data-pagedtable-source type="application/json">
-{"columns":[{"label":[""],"name":["_rn_"],"type":[""],"align":["left"]},{"label":["mtry"],"name":[1],"type":["dbl"],"align":["right"]},{"label":["splitrule"],"name":[2],"type":["fct"],"align":["left"]},{"label":["min.node.size"],"name":[3],"type":["dbl"],"align":["right"]}],"data":[{"1":"2","2":"gini","3":"30","_rn_":"6"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
-  </script>
-</div>
-<p>Obtengo que los hiperparámetros que mejor resultado dan son
-<code>mtry</code>= 1 y <code>min.node.size</code>=30. Voy a probar con
-los datos de test con este modelo.</p>
-<div class="sourceCode" id="cb30"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb30-1"><a href="#cb30-1" tabindex="-1"></a>pred_M <span class="ot">&lt;-</span> <span class="fu">predict</span>(modelo_M, <span class="at">newdata =</span> test_dataM)</span>
-<span id="cb30-2"><a href="#cb30-2" tabindex="-1"></a>conf_M <span class="ot">&lt;-</span> <span class="fu">confusionMatrix</span>(pred_M, test_dataM<span class="sc">$</span>TenYearCHD)</span></code></pre></div>
-<p>Ahora observo los resultados de la matriz de confusión</p>
-<div class="sourceCode" id="cb31"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb31-1"><a href="#cb31-1" tabindex="-1"></a><span class="fu">print</span>(conf_M)</span></code></pre></div>
-<pre><code>## Confusion Matrix and Statistics
-## 
-##           Reference
-## Prediction  No Yes
-##        No  467  57
-##        Yes 252  71
-##                                           
-##                Accuracy : 0.6352          
-##                  95% CI : (0.6017, 0.6677)
-##     No Information Rate : 0.8489          
-##     P-Value [Acc &gt; NIR] : 1               
-##                                           
-##                   Kappa : 0.1256          
-##                                           
-##  Mcnemar&#39;s Test P-Value : &lt;2e-16          
-##                                           
-##             Sensitivity : 0.6495          
-##             Specificity : 0.5547          
-##          Pos Pred Value : 0.8912          
-##          Neg Pred Value : 0.2198          
-##              Prevalence : 0.8489          
-##          Detection Rate : 0.5514          
-##    Detection Prevalence : 0.6187          
-##       Balanced Accuracy : 0.6021          
-##                                           
-##        &#39;Positive&#39; Class : No              
-## </code></pre>
-</div>
-<div id="resultados-rf-con-dataframe-mc" class="section level2" number="5.2">
-<h2><span class="header-section-number">5.2</span> Resultados RF con
-Dataframe MC</h2>
-<div class="sourceCode" id="cb33"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb33-1"><a href="#cb33-1" tabindex="-1"></a>modelo_MC<span class="sc">$</span>results</span></code></pre></div>
-<div data-pagedtable="false">
-<script data-pagedtable-source type="application/json">
-{"columns":[{"label":[""],"name":["_rn_"],"type":[""],"align":["left"]},{"label":["mtry"],"name":[1],"type":["dbl"],"align":["right"]},{"label":["splitrule"],"name":[2],"type":["fct"],"align":["left"]},{"label":["min.node.size"],"name":[3],"type":["dbl"],"align":["right"]},{"label":["Accuracy"],"name":[4],"type":["dbl"],"align":["right"]},{"label":["Kappa"],"name":[5],"type":["dbl"],"align":["right"]},{"label":["AccuracySD"],"name":[6],"type":["dbl"],"align":["right"]},{"label":["KappaSD"],"name":[7],"type":["dbl"],"align":["right"]}],"data":[{"1":"1","2":"gini","3":"10","4":"0.6424408","5":"0.2851266","6":"0.03547188","7":"0.07070129","_rn_":"1"},{"1":"1","2":"gini","3":"20","4":"0.6404710","5":"0.2811948","6":"0.03523743","7":"0.07028104","_rn_":"2"},{"1":"1","2":"gini","3":"30","4":"0.6453629","5":"0.2910029","6":"0.04200261","7":"0.08369533","_rn_":"3"},{"1":"2","2":"gini","3":"10","4":"0.6404514","5":"0.2811940","6":"0.04131331","7":"0.08262913","_rn_":"4"},{"1":"2","2":"gini","3":"20","4":"0.6444010","5":"0.2891687","6":"0.03444973","7":"0.06909072","_rn_":"5"},{"1":"2","2":"gini","3":"30","4":"0.6405267","5":"0.2813692","6":"0.03045255","7":"0.06100498","_rn_":"6"},{"1":"4","2":"gini","3":"10","4":"0.6367001","5":"0.2738368","6":"0.04292395","7":"0.08580718","_rn_":"7"},{"1":"4","2":"gini","3":"20","4":"0.6395752","5":"0.2795553","6":"0.03506718","7":"0.06998305","_rn_":"8"},{"1":"4","2":"gini","3":"30","4":"0.6357199","5":"0.2718905","6":"0.03615472","7":"0.07215662","_rn_":"9"},{"1":"8","2":"gini","3":"10","4":"0.6327785","5":"0.2660543","6":"0.03544840","7":"0.07084428","_rn_":"10"},{"1":"8","2":"gini","3":"20","4":"0.6318455","5":"0.2642005","6":"0.03752888","7":"0.07473363","_rn_":"11"},{"1":"8","2":"gini","3":"30","4":"0.6269630","5":"0.2544315","6":"0.03200113","7":"0.06377733","_rn_":"12"},{"1":"11","2":"gini","3":"10","4":"0.6172914","5":"0.2350431","6":"0.03209198","7":"0.06395881","_rn_":"13"},{"1":"11","2":"gini","3":"20","4":"0.6231637","5":"0.2468221","6":"0.03852743","7":"0.07688150","_rn_":"14"},{"1":"11","2":"gini","3":"30","4":"0.6308551","5":"0.2622200","6":"0.04445225","7":"0.08900962","_rn_":"15"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
-  </script>
-</div>
-<div class="sourceCode" id="cb34"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb34-1"><a href="#cb34-1" tabindex="-1"></a>modelo_MC<span class="sc">$</span>bestTune</span></code></pre></div>
-<div data-pagedtable="false">
-<script data-pagedtable-source type="application/json">
-{"columns":[{"label":[""],"name":["_rn_"],"type":[""],"align":["left"]},{"label":["mtry"],"name":[1],"type":["dbl"],"align":["right"]},{"label":["splitrule"],"name":[2],"type":["fct"],"align":["left"]},{"label":["min.node.size"],"name":[3],"type":["dbl"],"align":["right"]}],"data":[{"1":"1","2":"gini","3":"30","_rn_":"3"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
-  </script>
-</div>
-<p>Como se observa los resultados mejoran ligeramente frente al modelo
-que usa el dataset M como es lógico, aún así está mejora no es muy
-sustancial. Voy a comprobar los resultados con los datos de test.</p>
-<div class="sourceCode" id="cb35"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb35-1"><a href="#cb35-1" tabindex="-1"></a>pred_MC <span class="ot">&lt;-</span> <span class="fu">predict</span>(modelo_MC, <span class="at">newdata =</span> test_dataMC)</span>
-<span id="cb35-2"><a href="#cb35-2" tabindex="-1"></a>conf_MC <span class="ot">&lt;-</span> <span class="fu">confusionMatrix</span>(pred_MC, test_dataMC<span class="sc">$</span>TenYearCHD)</span></code></pre></div>
-<div class="sourceCode" id="cb36"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb36-1"><a href="#cb36-1" tabindex="-1"></a><span class="fu">print</span>(conf_MC)</span></code></pre></div>
-<pre><code>## Confusion Matrix and Statistics
-## 
-##           Reference
-## Prediction  No Yes
-##        No  510  58
-##        Yes 209  70
-##                                          
-##                Accuracy : 0.6848         
-##                  95% CI : (0.6523, 0.716)
-##     No Information Rate : 0.8489         
-##     P-Value [Acc &gt; NIR] : 1              
-##                                          
-##                   Kappa : 0.1725         
-##                                          
-##  Mcnemar&#39;s Test P-Value : &lt;2e-16         
-##                                          
-##             Sensitivity : 0.7093         
-##             Specificity : 0.5469         
-##          Pos Pred Value : 0.8979         
-##          Neg Pred Value : 0.2509         
-##              Prevalence : 0.8489         
-##          Detection Rate : 0.6021         
-##    Detection Prevalence : 0.6706         
-##       Balanced Accuracy : 0.6281         
-##                                          
-##        &#39;Positive&#39; Class : No             
-## </code></pre>
-</div>
-<div id="resultados-rf-con-always.split.variables" class="section level2" number="5.3">
-<h2><span class="header-section-number">5.3</span> Resultados RF con
-<code>always.split.variables</code></h2>
-<p>Primero voy a organizar los resultados de los 4 modelos en un mismo
-Dataframe para verlos mucho más claros</p>
-<div class="sourceCode" id="cb38"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb38-1"><a href="#cb38-1" tabindex="-1"></a>resumen_modelos_split <span class="ot">&lt;-</span> <span class="fu">lapply</span>(<span class="fu">names</span>(modelo_split), <span class="cf">function</span>(var_name) {</span>
-<span id="cb38-2"><a href="#cb38-2" tabindex="-1"></a>  modelo <span class="ot">&lt;-</span> modelo_split[[var_name]]</span>
-<span id="cb38-3"><a href="#cb38-3" tabindex="-1"></a>  </span>
-<span id="cb38-4"><a href="#cb38-4" tabindex="-1"></a>  best <span class="ot">&lt;-</span> modelo<span class="sc">$</span>results <span class="sc">%&gt;%</span></span>
-<span id="cb38-5"><a href="#cb38-5" tabindex="-1"></a>    <span class="fu">filter</span>(mtry <span class="sc">==</span> modelo<span class="sc">$</span>bestTune<span class="sc">$</span>mtry,</span>
-<span id="cb38-6"><a href="#cb38-6" tabindex="-1"></a>           min.node.size <span class="sc">==</span> modelo<span class="sc">$</span>bestTune<span class="sc">$</span>min.node.size)</span>
-<span id="cb38-7"><a href="#cb38-7" tabindex="-1"></a>  </span>
-<span id="cb38-8"><a href="#cb38-8" tabindex="-1"></a>  <span class="fu">data.frame</span>(</span>
-<span id="cb38-9"><a href="#cb38-9" tabindex="-1"></a>    <span class="at">variable_clinica =</span> var_name,</span>
-<span id="cb38-10"><a href="#cb38-10" tabindex="-1"></a>    <span class="at">mtry =</span> modelo<span class="sc">$</span>bestTune<span class="sc">$</span>mtry,</span>
-<span id="cb38-11"><a href="#cb38-11" tabindex="-1"></a>    <span class="at">min_node_size =</span> modelo<span class="sc">$</span>bestTune<span class="sc">$</span>min.node.size,</span>
-<span id="cb38-12"><a href="#cb38-12" tabindex="-1"></a>    <span class="at">Accuracy =</span> <span class="fu">round</span>(best<span class="sc">$</span>Accuracy, <span class="dv">4</span>),</span>
-<span id="cb38-13"><a href="#cb38-13" tabindex="-1"></a>    <span class="at">Kappa =</span> <span class="fu">round</span>(best<span class="sc">$</span>Kappa,<span class="dv">4</span>)</span>
-<span id="cb38-14"><a href="#cb38-14" tabindex="-1"></a>  )</span>
-<span id="cb38-15"><a href="#cb38-15" tabindex="-1"></a>}) <span class="sc">%&gt;%</span> <span class="fu">bind_rows</span>()</span>
-<span id="cb38-16"><a href="#cb38-16" tabindex="-1"></a></span>
-<span id="cb38-17"><a href="#cb38-17" tabindex="-1"></a>resumen_modelos_split <span class="ot">&lt;-</span> resumen_modelos_split <span class="sc">%&gt;%</span> <span class="fu">arrange</span>(<span class="fu">desc</span>(Accuracy))</span></code></pre></div>
-<p>Ahora imprimo por pantalla los resultados organizados</p>
-<div class="sourceCode" id="cb39"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb39-1"><a href="#cb39-1" tabindex="-1"></a><span class="fu">print</span>(resumen_modelos_split)</span></code></pre></div>
-<pre><code>##   variable_clinica mtry min_node_size Accuracy  Kappa
-## 1        education    2            30   0.6349 0.2700
-## 2              age    1            30   0.6240 0.2483
-## 3              BMI    4            20   0.6116 0.2234
-## 4             male    1            30   0.5976 0.1953</code></pre>
-<p>En los resultados vemos los mejores hiperparámetros para cada una de
-las variables clínicas junto con sus métricas. La mejor variable es
-<code>education</code> con un <code>mtry</code> = 1 y un
-<code>min.node.size</code> de 20. La variable menos explictiva de todas
-es <code>male</code>.</p>
-<p>A pesar de que education es claramente la mejor voy a probar a a
-predecir sobre los datos de test usando todas las variables para ver
-como varía el rendimiento de cada una.</p>
-<p>Voy a ir en orden respecto a la tabla de resultados, primero para la
-variable <code>education</code> luego para <code>age</code>,
-’<code>BMI</code> y <code>male</code>.</p>
-<div class="sourceCode" id="cb41"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb41-1"><a href="#cb41-1" tabindex="-1"></a>pred_education <span class="ot">&lt;-</span> <span class="fu">predict</span>(modelo_split[[<span class="st">&quot;education&quot;</span>]], <span class="at">newdata =</span> dataset_con_split[[<span class="st">&quot;education&quot;</span>]]<span class="sc">$</span>test)</span>
-<span id="cb41-2"><a href="#cb41-2" tabindex="-1"></a></span>
-<span id="cb41-3"><a href="#cb41-3" tabindex="-1"></a>conf_education <span class="ot">&lt;-</span> <span class="fu">confusionMatrix</span>(<span class="at">data =</span> pred_education, <span class="at">reference =</span> dataset_con_split[[<span class="st">&quot;education&quot;</span>]]<span class="sc">$</span>test<span class="sc">$</span>TenYearCHD)</span>
-<span id="cb41-4"><a href="#cb41-4" tabindex="-1"></a><span class="fu">print</span>(conf_education)</span></code></pre></div>
-<pre><code>## Confusion Matrix and Statistics
-## 
-##           Reference
-## Prediction  No Yes
-##        No  451  53
-##        Yes 268  75
-##                                           
-##                Accuracy : 0.621           
-##                  95% CI : (0.5874, 0.6538)
-##     No Information Rate : 0.8489          
-##     P-Value [Acc &gt; NIR] : 1               
-##                                           
-##                   Kappa : 0.1261          
-##                                           
-##  Mcnemar&#39;s Test P-Value : &lt;2e-16          
-##                                           
-##             Sensitivity : 0.6273          
-##             Specificity : 0.5859          
-##          Pos Pred Value : 0.8948          
-##          Neg Pred Value : 0.2187          
-##              Prevalence : 0.8489          
-##          Detection Rate : 0.5325          
-##    Detection Prevalence : 0.5950          
-##       Balanced Accuracy : 0.6066          
-##                                           
-##        &#39;Positive&#39; Class : No              
-## </code></pre>
-<div class="sourceCode" id="cb43"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb43-1"><a href="#cb43-1" tabindex="-1"></a>pred_age <span class="ot">&lt;-</span> <span class="fu">predict</span>(modelo_split[[<span class="st">&quot;age&quot;</span>]], <span class="at">newdata =</span> dataset_con_split[[<span class="st">&quot;age&quot;</span>]]<span class="sc">$</span>test)</span>
-<span id="cb43-2"><a href="#cb43-2" tabindex="-1"></a>conf_age <span class="ot">&lt;-</span> <span class="fu">confusionMatrix</span>(<span class="at">data =</span> pred_age, <span class="at">reference =</span> dataset_con_split[[<span class="st">&quot;age&quot;</span>]]<span class="sc">$</span>test<span class="sc">$</span>TenYearCHD)</span>
-<span id="cb43-3"><a href="#cb43-3" tabindex="-1"></a></span>
-<span id="cb43-4"><a href="#cb43-4" tabindex="-1"></a><span class="fu">print</span>(conf_age)</span></code></pre></div>
-<pre><code>## Confusion Matrix and Statistics
-## 
-##           Reference
-## Prediction  No Yes
-##        No  460  36
-##        Yes 259  92
-##                                           
-##                Accuracy : 0.6517          
-##                  95% CI : (0.6186, 0.6838)
-##     No Information Rate : 0.8489          
-##     P-Value [Acc &gt; NIR] : 1               
-##                                           
-##                   Kappa : 0.2089          
-##                                           
-##  Mcnemar&#39;s Test P-Value : &lt;2e-16          
-##                                           
-##             Sensitivity : 0.6398          
-##             Specificity : 0.7188          
-##          Pos Pred Value : 0.9274          
-##          Neg Pred Value : 0.2621          
-##              Prevalence : 0.8489          
-##          Detection Rate : 0.5431          
-##    Detection Prevalence : 0.5856          
-##       Balanced Accuracy : 0.6793          
-##                                           
-##        &#39;Positive&#39; Class : No              
-## </code></pre>
-<div class="sourceCode" id="cb45"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb45-1"><a href="#cb45-1" tabindex="-1"></a>pred_BMI <span class="ot">&lt;-</span> <span class="fu">predict</span>(modelo_split[[<span class="st">&quot;BMI&quot;</span>]], <span class="at">newdata =</span> dataset_con_split[[<span class="st">&quot;BMI&quot;</span>]]<span class="sc">$</span>test)</span>
+<div class="sourceCode" id="cb41"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb41-1"><a href="#cb41-1" tabindex="-1"></a>tune_grid <span class="ot">&lt;-</span> <span class="fu">expand.grid</span>(</span>
+<span id="cb41-2"><a href="#cb41-2" tabindex="-1"></a>  <span class="at">mtry =</span> <span class="fu">c</span>(<span class="dv">1</span>,<span class="dv">2</span>,<span class="dv">4</span>,<span class="dv">8</span>,<span class="dv">11</span>),</span>
+<span id="cb41-3"><a href="#cb41-3" tabindex="-1"></a>  <span class="at">splitrule =</span> <span class="st">&quot;gini&quot;</span>,</span>
+<span id="cb41-4"><a href="#cb41-4" tabindex="-1"></a>  <span class="at">min.node.size =</span> <span class="fu">c</span>(<span class="dv">10</span>, <span class="dv">20</span>, <span class="dv">30</span>)</span>
+<span id="cb41-5"><a href="#cb41-5" tabindex="-1"></a>)</span>
+<span id="cb41-6"><a href="#cb41-6" tabindex="-1"></a></span>
+<span id="cb41-7"><a href="#cb41-7" tabindex="-1"></a>control <span class="ot">&lt;-</span> <span class="fu">trainControl</span>(</span>
+<span id="cb41-8"><a href="#cb41-8" tabindex="-1"></a>  <span class="at">method =</span> <span class="st">&quot;cv&quot;</span>,</span>
+<span id="cb41-9"><a href="#cb41-9" tabindex="-1"></a>  <span class="at">number =</span> <span class="dv">5</span>,</span>
+<span id="cb41-10"><a href="#cb41-10" tabindex="-1"></a>  <span class="at">verboseIter =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb41-11"><a href="#cb41-11" tabindex="-1"></a></span>
+<span id="cb41-12"><a href="#cb41-12" tabindex="-1"></a>modelo_split <span class="ot">&lt;-</span> <span class="fu">list</span>()</span>
+<span id="cb41-13"><a href="#cb41-13" tabindex="-1"></a><span class="cf">for</span> (var_c <span class="cf">in</span> <span class="fu">names</span>(dataset_con_split)){</span>
+<span id="cb41-14"><a href="#cb41-14" tabindex="-1"></a></span>
+<span id="cb41-15"><a href="#cb41-15" tabindex="-1"></a>  modeloSplit <span class="ot">&lt;-</span> <span class="fu">train</span> (</span>
+<span id="cb41-16"><a href="#cb41-16" tabindex="-1"></a>    TenYearCHD <span class="sc">~</span> .,</span>
+<span id="cb41-17"><a href="#cb41-17" tabindex="-1"></a>    <span class="at">data =</span> dataset_con_split[[var_c]]<span class="sc">$</span>train,</span>
+<span id="cb41-18"><a href="#cb41-18" tabindex="-1"></a>    <span class="at">method=</span><span class="st">&quot;ranger&quot;</span>,</span>
+<span id="cb41-19"><a href="#cb41-19" tabindex="-1"></a>    <span class="at">tuneGrid=</span>tune_grid,</span>
+<span id="cb41-20"><a href="#cb41-20" tabindex="-1"></a>    <span class="at">trControl=</span>control,</span>
+<span id="cb41-21"><a href="#cb41-21" tabindex="-1"></a>    <span class="at">metric=</span><span class="st">&quot;Accuracy&quot;</span>,</span>
+<span id="cb41-22"><a href="#cb41-22" tabindex="-1"></a>    <span class="at">max.depth=</span><span class="dv">10</span>,</span>
+<span id="cb41-23"><a href="#cb41-23" tabindex="-1"></a>    <span class="at">always.split.variables=</span> var_c</span>
+<span id="cb41-24"><a href="#cb41-24" tabindex="-1"></a>  )</span>
+<span id="cb41-25"><a href="#cb41-25" tabindex="-1"></a>  </span>
+<span id="cb41-26"><a href="#cb41-26" tabindex="-1"></a>modelo_split[[var_c]] <span class="ot">&lt;-</span> modeloSplit</span>
+<span id="cb41-27"><a href="#cb41-27" tabindex="-1"></a>}</span></code></pre></div>
+<p>Imprimo los mejores hiperparámetros para cada una de las variables
+clínicas</p>
+<div class="sourceCode" id="cb42"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb42-1"><a href="#cb42-1" tabindex="-1"></a>resumen_modelos_split <span class="ot">&lt;-</span> <span class="fu">lapply</span>(<span class="fu">names</span>(modelo_split), <span class="cf">function</span>(var_name) {</span>
+<span id="cb42-2"><a href="#cb42-2" tabindex="-1"></a>  modelo <span class="ot">&lt;-</span> modelo_split[[var_name]]</span>
+<span id="cb42-3"><a href="#cb42-3" tabindex="-1"></a>  </span>
+<span id="cb42-4"><a href="#cb42-4" tabindex="-1"></a>  best <span class="ot">&lt;-</span> modelo<span class="sc">$</span>results <span class="sc">%&gt;%</span></span>
+<span id="cb42-5"><a href="#cb42-5" tabindex="-1"></a>    <span class="fu">filter</span>(mtry <span class="sc">==</span> modelo<span class="sc">$</span>bestTune<span class="sc">$</span>mtry,</span>
+<span id="cb42-6"><a href="#cb42-6" tabindex="-1"></a>           min.node.size <span class="sc">==</span> modelo<span class="sc">$</span>bestTune<span class="sc">$</span>min.node.size)</span>
+<span id="cb42-7"><a href="#cb42-7" tabindex="-1"></a>  </span>
+<span id="cb42-8"><a href="#cb42-8" tabindex="-1"></a>  <span class="fu">data.frame</span>(</span>
+<span id="cb42-9"><a href="#cb42-9" tabindex="-1"></a>    <span class="at">variable_clinica =</span> var_name,</span>
+<span id="cb42-10"><a href="#cb42-10" tabindex="-1"></a>    <span class="at">mtry =</span> modelo<span class="sc">$</span>bestTune<span class="sc">$</span>mtry,</span>
+<span id="cb42-11"><a href="#cb42-11" tabindex="-1"></a>    <span class="at">min_node_size =</span> modelo<span class="sc">$</span>bestTune<span class="sc">$</span>min.node.size,</span>
+<span id="cb42-12"><a href="#cb42-12" tabindex="-1"></a>    <span class="at">Accuracy =</span> <span class="fu">round</span>(best<span class="sc">$</span>Accuracy, <span class="dv">4</span>)</span>
+<span id="cb42-13"><a href="#cb42-13" tabindex="-1"></a>  )</span>
+<span id="cb42-14"><a href="#cb42-14" tabindex="-1"></a>}) <span class="sc">%&gt;%</span> <span class="fu">bind_rows</span>()</span>
+<span id="cb42-15"><a href="#cb42-15" tabindex="-1"></a></span>
+<span id="cb42-16"><a href="#cb42-16" tabindex="-1"></a><span class="fu">print</span>(resumen_modelos_split)</span></code></pre></div>
+<pre><code>##   variable_clinica mtry min_node_size Accuracy
+## 1             male    1            20   0.6222
+## 2              age    2            20   0.6502
+## 3        education    1            10   0.6434
+## 4              BMI    2            10   0.6270</code></pre>
+<div class="sourceCode" id="cb44"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb44-1"><a href="#cb44-1" tabindex="-1"></a>boot_splitM <span class="ot">&lt;-</span> <span class="fu">list</span>()</span>
+<span id="cb44-2"><a href="#cb44-2" tabindex="-1"></a></span>
+<span id="cb44-3"><a href="#cb44-3" tabindex="-1"></a><span class="cf">for</span> (var_c <span class="cf">in</span> <span class="fu">names</span>(modelo_split)) {</span>
+<span id="cb44-4"><a href="#cb44-4" tabindex="-1"></a>  data_train <span class="ot">&lt;-</span> dataset_con_split[[var_c]]<span class="sc">$</span>train</span>
+<span id="cb44-5"><a href="#cb44-5" tabindex="-1"></a>  </span>
+<span id="cb44-6"><a href="#cb44-6" tabindex="-1"></a>  best <span class="ot">&lt;-</span> modelo_split[[var_c]]<span class="sc">$</span>bestTune</span>
+<span id="cb44-7"><a href="#cb44-7" tabindex="-1"></a>  </span>
+<span id="cb44-8"><a href="#cb44-8" tabindex="-1"></a>  control_boot <span class="ot">&lt;-</span> <span class="fu">trainControl</span>(</span>
+<span id="cb44-9"><a href="#cb44-9" tabindex="-1"></a>    <span class="at">method =</span> <span class="st">&quot;boot&quot;</span>,</span>
+<span id="cb44-10"><a href="#cb44-10" tabindex="-1"></a>    <span class="at">number =</span> <span class="dv">15</span>,  </span>
+<span id="cb44-11"><a href="#cb44-11" tabindex="-1"></a>    <span class="at">classProbs =</span> <span class="cn">TRUE</span>,</span>
+<span id="cb44-12"><a href="#cb44-12" tabindex="-1"></a>  )</span>
+<span id="cb44-13"><a href="#cb44-13" tabindex="-1"></a>  </span>
+<span id="cb44-14"><a href="#cb44-14" tabindex="-1"></a>  modelo_boot <span class="ot">&lt;-</span> <span class="fu">train</span>(</span>
+<span id="cb44-15"><a href="#cb44-15" tabindex="-1"></a>    TenYearCHD <span class="sc">~</span> .,</span>
+<span id="cb44-16"><a href="#cb44-16" tabindex="-1"></a>    <span class="at">data =</span> data_train,</span>
+<span id="cb44-17"><a href="#cb44-17" tabindex="-1"></a>    <span class="at">method =</span> <span class="st">&quot;ranger&quot;</span>,</span>
+<span id="cb44-18"><a href="#cb44-18" tabindex="-1"></a>    <span class="at">tuneGrid =</span> best,</span>
+<span id="cb44-19"><a href="#cb44-19" tabindex="-1"></a>    <span class="at">metric =</span> <span class="st">&quot;Accuracy&quot;</span>,</span>
+<span id="cb44-20"><a href="#cb44-20" tabindex="-1"></a>    <span class="at">trControl =</span> control_boot,</span>
+<span id="cb44-21"><a href="#cb44-21" tabindex="-1"></a>    <span class="at">max.depth =</span> <span class="dv">10</span>,</span>
+<span id="cb44-22"><a href="#cb44-22" tabindex="-1"></a>    <span class="at">always.split.variables =</span> var_c</span>
+<span id="cb44-23"><a href="#cb44-23" tabindex="-1"></a>  )</span>
+<span id="cb44-24"><a href="#cb44-24" tabindex="-1"></a>  </span>
+<span id="cb44-25"><a href="#cb44-25" tabindex="-1"></a>  boot_splitM[[var_c]] <span class="ot">&lt;-</span> modelo_boot</span>
+<span id="cb44-26"><a href="#cb44-26" tabindex="-1"></a>}</span></code></pre></div>
+<div class="sourceCode" id="cb45"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb45-1"><a href="#cb45-1" tabindex="-1"></a>resultados_boot_split <span class="ot">&lt;-</span> <span class="fu">list</span>()</span>
 <span id="cb45-2"><a href="#cb45-2" tabindex="-1"></a></span>
-<span id="cb45-3"><a href="#cb45-3" tabindex="-1"></a>conf_BMI <span class="ot">&lt;-</span> <span class="fu">confusionMatrix</span>(<span class="at">data =</span> pred_BMI, <span class="at">reference =</span> dataset_con_split[[<span class="st">&quot;BMI&quot;</span>]]<span class="sc">$</span>test<span class="sc">$</span>TenYearCHD)</span>
-<span id="cb45-4"><a href="#cb45-4" tabindex="-1"></a><span class="fu">print</span>(conf_BMI)</span></code></pre></div>
+<span id="cb45-3"><a href="#cb45-3" tabindex="-1"></a><span class="cf">for</span> (var_a <span class="cf">in</span> <span class="fu">names</span>(boot_splitM)) {</span>
+<span id="cb45-4"><a href="#cb45-4" tabindex="-1"></a>  <span class="fu">cat</span>(<span class="st">&quot;Variable forzada:&quot;</span>, var_a, <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
+<span id="cb45-5"><a href="#cb45-5" tabindex="-1"></a>  </span>
+<span id="cb45-6"><a href="#cb45-6" tabindex="-1"></a>  resultado_boot <span class="ot">&lt;-</span> boot_splitM[[var_a]]<span class="sc">$</span>resample</span>
+<span id="cb45-7"><a href="#cb45-7" tabindex="-1"></a>  resultado_boot<span class="sc">$</span>Variable <span class="ot">&lt;-</span> var_a</span>
+<span id="cb45-8"><a href="#cb45-8" tabindex="-1"></a>  resultados_boot_split[[var_a]] <span class="ot">&lt;-</span> resultado_boot</span>
+<span id="cb45-9"><a href="#cb45-9" tabindex="-1"></a>  </span>
+<span id="cb45-10"><a href="#cb45-10" tabindex="-1"></a>  media <span class="ot">&lt;-</span> <span class="fu">mean</span>(resultado_boot<span class="sc">$</span>Accuracy, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb45-11"><a href="#cb45-11" tabindex="-1"></a>  ic <span class="ot">&lt;-</span> <span class="fu">quantile</span>(resultado_boot<span class="sc">$</span>Accuracy, <span class="at">probs =</span> <span class="fu">c</span>(<span class="fl">0.025</span>, <span class="fl">0.975</span>), <span class="at">na.rm =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb45-12"><a href="#cb45-12" tabindex="-1"></a>  </span>
+<span id="cb45-13"><a href="#cb45-13" tabindex="-1"></a>  <span class="fu">cat</span>(<span class="st">&quot;  → Media Accuracy:&quot;</span>, <span class="fu">round</span>(media, <span class="dv">3</span>), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
+<span id="cb45-14"><a href="#cb45-14" tabindex="-1"></a>  <span class="fu">cat</span>(<span class="st">&quot;  → IC 95%:&quot;</span>, <span class="fu">round</span>(ic[<span class="dv">1</span>], <span class="dv">3</span>), <span class="st">&quot;-&quot;</span>, <span class="fu">round</span>(ic[<span class="dv">2</span>], <span class="dv">3</span>), <span class="st">&quot;</span><span class="sc">\n\n</span><span class="st">&quot;</span>)</span>
+<span id="cb45-15"><a href="#cb45-15" tabindex="-1"></a>}</span></code></pre></div>
+<pre><code>## Variable forzada: male 
+##   → Media Accuracy: 0.607 
+##   → IC 95%: 0.572 - 0.645 
+## 
+## Variable forzada: age 
+##   → Media Accuracy: 0.642 
+##   → IC 95%: 0.615 - 0.67 
+## 
+## Variable forzada: education 
+##   → Media Accuracy: 0.622 
+##   → IC 95%: 0.595 - 0.642 
+## 
+## Variable forzada: BMI 
+##   → Media Accuracy: 0.599 
+##   → IC 95%: 0.562 - 0.618</code></pre>
+</div>
+</div>
+<div id="boxplot-de-todos-los-modelos" class="section level1" number="5">
+<h1><span class="header-section-number">5</span> BoxPlot de Todos los
+modelos</h1>
+<div class="sourceCode" id="cb47"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb47-1"><a href="#cb47-1" tabindex="-1"></a>resample_M <span class="ot">&lt;-</span> modelo_bootM<span class="sc">$</span>resample <span class="sc">%&gt;%</span></span>
+<span id="cb47-2"><a href="#cb47-2" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">Modelo =</span> <span class="st">&quot;M&quot;</span>)</span>
+<span id="cb47-3"><a href="#cb47-3" tabindex="-1"></a></span>
+<span id="cb47-4"><a href="#cb47-4" tabindex="-1"></a>resample_MC <span class="ot">&lt;-</span> modelo_bootMC<span class="sc">$</span>resample <span class="sc">%&gt;%</span></span>
+<span id="cb47-5"><a href="#cb47-5" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">Modelo =</span> <span class="st">&quot;MC&quot;</span>)</span>
+<span id="cb47-6"><a href="#cb47-6" tabindex="-1"></a></span>
+<span id="cb47-7"><a href="#cb47-7" tabindex="-1"></a>resample_Msplit <span class="ot">&lt;-</span> <span class="fu">lapply</span>(<span class="fu">names</span>(boot_splitM), <span class="cf">function</span>(var_c) {</span>
+<span id="cb47-8"><a href="#cb47-8" tabindex="-1"></a>  df <span class="ot">&lt;-</span> boot_splitM[[var_c]]<span class="sc">$</span>resample</span>
+<span id="cb47-9"><a href="#cb47-9" tabindex="-1"></a>  df <span class="ot">&lt;-</span> df <span class="sc">%&gt;%</span></span>
+<span id="cb47-10"><a href="#cb47-10" tabindex="-1"></a>    <span class="fu">mutate</span>(<span class="at">Modelo =</span> <span class="fu">paste0</span>(<span class="st">&quot;M_&quot;</span>, var_c))</span>
+<span id="cb47-11"><a href="#cb47-11" tabindex="-1"></a>  df</span>
+<span id="cb47-12"><a href="#cb47-12" tabindex="-1"></a>}) <span class="sc">%&gt;%</span> <span class="fu">bind_rows</span>()</span>
+<span id="cb47-13"><a href="#cb47-13" tabindex="-1"></a></span>
+<span id="cb47-14"><a href="#cb47-14" tabindex="-1"></a>resample_total <span class="ot">&lt;-</span> <span class="fu">bind_rows</span>(resample_M, resample_MC, resample_Msplit)</span>
+<span id="cb47-15"><a href="#cb47-15" tabindex="-1"></a></span>
+<span id="cb47-16"><a href="#cb47-16" tabindex="-1"></a><span class="fu">ggplot</span>(resample_total, <span class="fu">aes</span>(<span class="at">x =</span> Modelo, <span class="at">y =</span> Accuracy, <span class="at">fill =</span> Modelo)) <span class="sc">+</span></span>
+<span id="cb47-17"><a href="#cb47-17" tabindex="-1"></a>  <span class="fu">geom_boxplot</span>(<span class="at">color =</span> <span class="st">&quot;darkgreen&quot;</span>) <span class="sc">+</span></span>
+<span id="cb47-18"><a href="#cb47-18" tabindex="-1"></a>  <span class="fu">theme_minimal</span>() <span class="sc">+</span></span>
+<span id="cb47-19"><a href="#cb47-19" tabindex="-1"></a>  <span class="fu">labs</span>(</span>
+<span id="cb47-20"><a href="#cb47-20" tabindex="-1"></a>    <span class="at">title =</span> <span class="st">&quot;Comparativa de Accuracy entre modelos&quot;</span>,</span>
+<span id="cb47-21"><a href="#cb47-21" tabindex="-1"></a>    <span class="at">x =</span> <span class="st">&quot;Modelo&quot;</span>,</span>
+<span id="cb47-22"><a href="#cb47-22" tabindex="-1"></a>    <span class="at">y =</span> <span class="st">&quot;Accuracy&quot;</span></span>
+<span id="cb47-23"><a href="#cb47-23" tabindex="-1"></a>  ) <span class="sc">+</span></span>
+<span id="cb47-24"><a href="#cb47-24" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">axis.text.x =</span> <span class="fu">element_text</span>(<span class="at">angle =</span> <span class="dv">45</span>, <span class="at">hjust =</span> <span class="dv">1</span>))</span></code></pre></div>
+<p><img role="img" src="data:image/png;base64,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" /><!-- --></p>
+</div>
+<div id="resultados-sobre-los-datos-de-test" class="section level1" number="6">
+<h1><span class="header-section-number">6</span> Resultados sobre los
+datos de Test</h1>
+<div id="resultados-test-sobre-m" class="section level2" number="6.1">
+<h2><span class="header-section-number">6.1</span> Resultados test sobre
+M</h2>
+<div class="sourceCode" id="cb48"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb48-1"><a href="#cb48-1" tabindex="-1"></a>pred_M <span class="ot">&lt;-</span> <span class="fu">predict</span>(modelo_bootM, <span class="at">newdata =</span> test_dataM)</span>
+<span id="cb48-2"><a href="#cb48-2" tabindex="-1"></a>conf_M <span class="ot">&lt;-</span> <span class="fu">confusionMatrix</span>(pred_M, test_dataM<span class="sc">$</span>TenYearCHD)</span></code></pre></div>
+<p>Ahora observo los resultados de la matriz de confusión</p>
+<div class="sourceCode" id="cb49"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb49-1"><a href="#cb49-1" tabindex="-1"></a><span class="fu">print</span>(conf_M)</span></code></pre></div>
 <pre><code>## Confusion Matrix and Statistics
 ## 
 ##           Reference
 ## Prediction  No Yes
-##        No  424  53
-##        Yes 295  75
+##        No  504  67
+##        Yes 215  61
 ##                                           
-##                Accuracy : 0.5891          
-##                  95% CI : (0.5552, 0.6225)
+##                Accuracy : 0.6671          
+##                  95% CI : (0.6342, 0.6988)
 ##     No Information Rate : 0.8489          
 ##     P-Value [Acc &gt; NIR] : 1               
 ##                                           
-##                   Kappa : 0.0988          
+##                   Kappa : 0.1203          
 ##                                           
 ##  Mcnemar&#39;s Test P-Value : &lt;2e-16          
 ##                                           
-##             Sensitivity : 0.5897          
-##             Specificity : 0.5859          
-##          Pos Pred Value : 0.8889          
-##          Neg Pred Value : 0.2027          
+##             Sensitivity : 0.7010          
+##             Specificity : 0.4766          
+##          Pos Pred Value : 0.8827          
+##          Neg Pred Value : 0.2210          
 ##              Prevalence : 0.8489          
-##          Detection Rate : 0.5006          
-##    Detection Prevalence : 0.5632          
-##       Balanced Accuracy : 0.5878          
+##          Detection Rate : 0.5950          
+##    Detection Prevalence : 0.6741          
+##       Balanced Accuracy : 0.5888          
 ##                                           
 ##        &#39;Positive&#39; Class : No              
 ## </code></pre>
-<div class="sourceCode" id="cb47"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb47-1"><a href="#cb47-1" tabindex="-1"></a>pred_male <span class="ot">&lt;-</span> <span class="fu">predict</span>(modelo_split[[<span class="st">&quot;male&quot;</span>]], <span class="at">newdata =</span> dataset_con_split[[<span class="st">&quot;male&quot;</span>]]<span class="sc">$</span>test)</span>
-<span id="cb47-2"><a href="#cb47-2" tabindex="-1"></a></span>
-<span id="cb47-3"><a href="#cb47-3" tabindex="-1"></a>conf_male <span class="ot">&lt;-</span> <span class="fu">confusionMatrix</span>(<span class="at">data =</span> pred_male, <span class="at">reference =</span> dataset_con_split[[<span class="st">&quot;male&quot;</span>]]<span class="sc">$</span>test<span class="sc">$</span>TenYearCHD)</span>
-<span id="cb47-4"><a href="#cb47-4" tabindex="-1"></a><span class="fu">print</span>(conf_male)</span></code></pre></div>
+</div>
+<div id="resultados-rf-con-dataframe-mc-sobre-test" class="section level2" number="6.2">
+<h2><span class="header-section-number">6.2</span> Resultados RF con
+Dataframe MC sobre Test</h2>
+<div class="sourceCode" id="cb51"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb51-1"><a href="#cb51-1" tabindex="-1"></a>pred_MC <span class="ot">&lt;-</span> <span class="fu">predict</span>(modelo_bootMC, <span class="at">newdata =</span> test_dataMC)</span>
+<span id="cb51-2"><a href="#cb51-2" tabindex="-1"></a>conf_MC <span class="ot">&lt;-</span> <span class="fu">confusionMatrix</span>(pred_MC, test_dataMC<span class="sc">$</span>TenYearCHD)</span></code></pre></div>
+<div class="sourceCode" id="cb52"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb52-1"><a href="#cb52-1" tabindex="-1"></a><span class="fu">print</span>(conf_MC)</span></code></pre></div>
 <pre><code>## Confusion Matrix and Statistics
 ## 
 ##           Reference
 ## Prediction  No Yes
-##        No  483  58
-##        Yes 236  70
+##        No  490  51
+##        Yes 229  77
+##                                           
+##                Accuracy : 0.6694          
+##                  95% CI : (0.6366, 0.7011)
+##     No Information Rate : 0.8489          
+##     P-Value [Acc &gt; NIR] : 1               
+##                                           
+##                   Kappa : 0.1801          
+##                                           
+##  Mcnemar&#39;s Test P-Value : &lt;2e-16          
+##                                           
+##             Sensitivity : 0.6815          
+##             Specificity : 0.6016          
+##          Pos Pred Value : 0.9057          
+##          Neg Pred Value : 0.2516          
+##              Prevalence : 0.8489          
+##          Detection Rate : 0.5785          
+##    Detection Prevalence : 0.6387          
+##       Balanced Accuracy : 0.6415          
+##                                           
+##        &#39;Positive&#39; Class : No              
+## </code></pre>
+</div>
+<div id="resultados-rf-con-always.split.variables-sobre-test" class="section level2" number="6.3">
+<h2><span class="header-section-number">6.3</span> Resultados RF con
+<code>always.split.variables</code> sobre Test</h2>
+<div class="sourceCode" id="cb54"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb54-1"><a href="#cb54-1" tabindex="-1"></a>pred_education <span class="ot">&lt;-</span> <span class="fu">predict</span>(boot_splitM[[<span class="st">&quot;education&quot;</span>]], <span class="at">newdata =</span> dataset_con_split[[<span class="st">&quot;education&quot;</span>]]<span class="sc">$</span>test)</span>
+<span id="cb54-2"><a href="#cb54-2" tabindex="-1"></a></span>
+<span id="cb54-3"><a href="#cb54-3" tabindex="-1"></a>conf_education <span class="ot">&lt;-</span> <span class="fu">confusionMatrix</span>(<span class="at">data =</span> pred_education, <span class="at">reference =</span> dataset_con_split[[<span class="st">&quot;education&quot;</span>]]<span class="sc">$</span>test<span class="sc">$</span>TenYearCHD)</span>
+<span id="cb54-4"><a href="#cb54-4" tabindex="-1"></a><span class="fu">print</span>(conf_education)</span></code></pre></div>
+<pre><code>## Confusion Matrix and Statistics
+## 
+##           Reference
+## Prediction  No Yes
+##        No  495  69
+##        Yes 224  59
 ##                                          
-##                Accuracy : 0.6529         
-##                  95% CI : (0.6198, 0.685)
+##                Accuracy : 0.6541         
+##                  95% CI : (0.621, 0.6861)
 ##     No Information Rate : 0.8489         
 ##     P-Value [Acc &gt; NIR] : 1              
 ##                                          
-##                   Kappa : 0.1391         
+##                   Kappa : 0.0998         
 ##                                          
 ##  Mcnemar&#39;s Test P-Value : &lt;2e-16         
 ##                                          
-##             Sensitivity : 0.6718         
-##             Specificity : 0.5469         
-##          Pos Pred Value : 0.8928         
-##          Neg Pred Value : 0.2288         
+##             Sensitivity : 0.6885         
+##             Specificity : 0.4609         
+##          Pos Pred Value : 0.8777         
+##          Neg Pred Value : 0.2085         
 ##              Prevalence : 0.8489         
-##          Detection Rate : 0.5702         
-##    Detection Prevalence : 0.6387         
-##       Balanced Accuracy : 0.6093         
+##          Detection Rate : 0.5844         
+##    Detection Prevalence : 0.6659         
+##       Balanced Accuracy : 0.5747         
 ##                                          
 ##        &#39;Positive&#39; Class : No             
 ## </code></pre>
+<div class="sourceCode" id="cb56"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb56-1"><a href="#cb56-1" tabindex="-1"></a>pred_age <span class="ot">&lt;-</span> <span class="fu">predict</span>(boot_splitM[[<span class="st">&quot;age&quot;</span>]], <span class="at">newdata =</span> dataset_con_split[[<span class="st">&quot;age&quot;</span>]]<span class="sc">$</span>test)</span>
+<span id="cb56-2"><a href="#cb56-2" tabindex="-1"></a>conf_age <span class="ot">&lt;-</span> <span class="fu">confusionMatrix</span>(<span class="at">data =</span> pred_age, <span class="at">reference =</span> dataset_con_split[[<span class="st">&quot;age&quot;</span>]]<span class="sc">$</span>test<span class="sc">$</span>TenYearCHD)</span>
+<span id="cb56-3"><a href="#cb56-3" tabindex="-1"></a></span>
+<span id="cb56-4"><a href="#cb56-4" tabindex="-1"></a><span class="fu">print</span>(conf_age)</span></code></pre></div>
+<pre><code>## Confusion Matrix and Statistics
+## 
+##           Reference
+## Prediction  No Yes
+##        No  484  53
+##        Yes 235  75
+##                                          
+##                Accuracy : 0.66           
+##                  95% CI : (0.627, 0.6919)
+##     No Information Rate : 0.8489         
+##     P-Value [Acc &gt; NIR] : 1              
+##                                          
+##                   Kappa : 0.1635         
+##                                          
+##  Mcnemar&#39;s Test P-Value : &lt;2e-16         
+##                                          
+##             Sensitivity : 0.6732         
+##             Specificity : 0.5859         
+##          Pos Pred Value : 0.9013         
+##          Neg Pred Value : 0.2419         
+##              Prevalence : 0.8489         
+##          Detection Rate : 0.5714         
+##    Detection Prevalence : 0.6340         
+##       Balanced Accuracy : 0.6295         
+##                                          
+##        &#39;Positive&#39; Class : No             
+## </code></pre>
+<div class="sourceCode" id="cb58"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb58-1"><a href="#cb58-1" tabindex="-1"></a>pred_BMI <span class="ot">&lt;-</span> <span class="fu">predict</span>(boot_splitM[[<span class="st">&quot;BMI&quot;</span>]], <span class="at">newdata =</span> dataset_con_split[[<span class="st">&quot;BMI&quot;</span>]]<span class="sc">$</span>test)</span>
+<span id="cb58-2"><a href="#cb58-2" tabindex="-1"></a></span>
+<span id="cb58-3"><a href="#cb58-3" tabindex="-1"></a>conf_BMI <span class="ot">&lt;-</span> <span class="fu">confusionMatrix</span>(<span class="at">data =</span> pred_BMI, <span class="at">reference =</span> dataset_con_split[[<span class="st">&quot;BMI&quot;</span>]]<span class="sc">$</span>test<span class="sc">$</span>TenYearCHD)</span>
+<span id="cb58-4"><a href="#cb58-4" tabindex="-1"></a><span class="fu">print</span>(conf_BMI)</span></code></pre></div>
+<pre><code>## Confusion Matrix and Statistics
+## 
+##           Reference
+## Prediction  No Yes
+##        No  491  63
+##        Yes 228  65
+##                                           
+##                Accuracy : 0.6564          
+##                  95% CI : (0.6234, 0.6884)
+##     No Information Rate : 0.8489          
+##     P-Value [Acc &gt; NIR] : 1               
+##                                           
+##                   Kappa : 0.1247          
+##                                           
+##  Mcnemar&#39;s Test P-Value : &lt;2e-16          
+##                                           
+##             Sensitivity : 0.6829          
+##             Specificity : 0.5078          
+##          Pos Pred Value : 0.8863          
+##          Neg Pred Value : 0.2218          
+##              Prevalence : 0.8489          
+##          Detection Rate : 0.5797          
+##    Detection Prevalence : 0.6541          
+##       Balanced Accuracy : 0.5954          
+##                                           
+##        &#39;Positive&#39; Class : No              
+## </code></pre>
+<div class="sourceCode" id="cb60"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb60-1"><a href="#cb60-1" tabindex="-1"></a>pred_male <span class="ot">&lt;-</span> <span class="fu">predict</span>(boot_splitM[[<span class="st">&quot;male&quot;</span>]], <span class="at">newdata =</span> dataset_con_split[[<span class="st">&quot;male&quot;</span>]]<span class="sc">$</span>test)</span>
+<span id="cb60-2"><a href="#cb60-2" tabindex="-1"></a></span>
+<span id="cb60-3"><a href="#cb60-3" tabindex="-1"></a>conf_male <span class="ot">&lt;-</span> <span class="fu">confusionMatrix</span>(<span class="at">data =</span> pred_male, <span class="at">reference =</span> dataset_con_split[[<span class="st">&quot;male&quot;</span>]]<span class="sc">$</span>test<span class="sc">$</span>TenYearCHD)</span>
+<span id="cb60-4"><a href="#cb60-4" tabindex="-1"></a><span class="fu">print</span>(conf_male)</span></code></pre></div>
+<pre><code>## Confusion Matrix and Statistics
+## 
+##           Reference
+## Prediction  No Yes
+##        No  490  63
+##        Yes 229  65
+##                                           
+##                Accuracy : 0.6553          
+##                  95% CI : (0.6222, 0.6873)
+##     No Information Rate : 0.8489          
+##     P-Value [Acc &gt; NIR] : 1               
+##                                           
+##                   Kappa : 0.1235          
+##                                           
+##  Mcnemar&#39;s Test P-Value : &lt;2e-16          
+##                                           
+##             Sensitivity : 0.6815          
+##             Specificity : 0.5078          
+##          Pos Pred Value : 0.8861          
+##          Neg Pred Value : 0.2211          
+##              Prevalence : 0.8489          
+##          Detection Rate : 0.5785          
+##    Detection Prevalence : 0.6529          
+##       Balanced Accuracy : 0.5947          
+##                                           
+##        &#39;Positive&#39; Class : No              
+## </code></pre>
 </div>
-<div id="discusión-de-los-resultados" class="section level2" number="5.4">
-<h2><span class="header-section-number">5.4</span> Discusión de los
+<div id="discusión-de-los-resultados" class="section level2" number="6.4">
+<h2><span class="header-section-number">6.4</span> Discusión de los
 resultados</h2>
 <p>Lo primero que hay que tener en cuenta a la hora de interpretar los
 resultados es el fuerte desbalance de la variable clase, con una
@@ -3441,8 +3541,8 @@ mediante <em>downsampling</em>, se priorizó el uso de métricas más
 informativas como la <code>Balanced Accuracy</code> y la
 <code>Sensitivity</code>, especialmente relevantes en contextos clínicos
 donde es crucial no pasar por alto casos en riesgo.</p>
-<div id="modelo-m" class="section level3" number="5.4.1">
-<h3><span class="header-section-number">5.4.1</span> Modelo M</h3>
+<div id="modelo-m" class="section level3" number="6.4.1">
+<h3><span class="header-section-number">6.4.1</span> Modelo M</h3>
 <p>Este modelo, construido únicamente con variables no clínicas,
 presenta una:</p>
 <ul>
@@ -3458,8 +3558,8 @@ para identificar individuos en riesgo como para evitar falsos positivos.
 Esto era esperable al haber excluido variables claves como
 <code>age</code> o <code>BMI</code>.</p>
 </div>
-<div id="modelo-mc" class="section level3" number="5.4.2">
-<h3><span class="header-section-number">5.4.2</span> Modelo MC</h3>
+<div id="modelo-mc" class="section level3" number="6.4.2">
+<h3><span class="header-section-number">6.4.2</span> Modelo MC</h3>
 <p>El modelo completo, que incluye todas las variables disponibles,
 alcanza una:</p>
 <ul>
@@ -3478,8 +3578,8 @@ un clasificador aleatorio. Esto se explica porque el conjunto de test
 continúa desbalanceado, lo cual limita la capacidad del modelo para
 generalizar correctamente.</p>
 </div>
-<div id="modelos-con-always.split.variables" class="section level3" number="5.4.3">
-<h3><span class="header-section-number">5.4.3</span> Modelos con
+<div id="modelos-con-always.split.variables" class="section level3" number="6.4.3">
+<h3><span class="header-section-number">6.4.3</span> Modelos con
 <code>always.split.variables</code></h3>
 <p>Se entrenaron modelos independientes incluyendo las variables del
 conjunto M más <strong>una única variable clínica forzada</strong> en
@@ -3487,8 +3587,8 @@ los nodos de división mediante el parámetro
 <code>always.split.variables</code>. El objetivo era evaluar si el uso
 explícito de variables clínicamente relevantes en los splits podía
 compensar la exclusión del resto de variables clínicas.</p>
-<div id="education" class="section level4" number="5.4.3.1">
-<h4><span class="header-section-number">5.4.3.1</span>
+<div id="education" class="section level4" number="6.4.3.1">
+<h4><span class="header-section-number">6.4.3.1</span>
 <code>education</code></h4>
 <ul>
 <li><code>Balanced Accuracy</code> = 0.613<br />
@@ -3505,8 +3605,8 @@ que esta variable captura parte de la información clave para la
 clasificación, aunque la especificidad sigue siendo moderada y los test
 de significación no son concluyentes.</p>
 </div>
-<div id="age" class="section level4" number="5.4.3.2">
-<h4><span class="header-section-number">5.4.3.2</span>
+<div id="age" class="section level4" number="6.4.3.2">
+<h4><span class="header-section-number">6.4.3.2</span>
 <code>age</code></h4>
 <ul>
 <li><code>Balanced Accuracy</code> = 0.68<br />
@@ -3525,8 +3625,8 @@ alta, destaca por su especificidad, lo que implica un buen control de
 falsos positivos. <code>age</code> demuestra ser una variable predictiva
 crítica por sí sola.</p>
 </div>
-<div id="bmi" class="section level4" number="5.4.3.3">
-<h4><span class="header-section-number">5.4.3.3</span>
+<div id="bmi" class="section level4" number="6.4.3.3">
+<h4><span class="header-section-number">6.4.3.3</span>
 <code>BMI</code></h4>
 <ul>
 <li><code>Balanced Accuracy</code> = 0.60<br />
@@ -3543,8 +3643,8 @@ rendimiento más bajo, igualando al modelo M en
 en los splits no mejora la capacidad predictiva del modelo de forma
 sustancial.</p>
 </div>
-<div id="male" class="section level4" number="5.4.3.4">
-<h4><span class="header-section-number">5.4.3.4</span>
+<div id="male" class="section level4" number="6.4.3.4">
+<h4><span class="header-section-number">6.4.3.4</span>
 <code>male</code></h4>
 <ul>
 <li><code>Balanced Accuracy</code> = 0.60<br />
@@ -3563,8 +3663,8 @@ información predictiva.</p>
 </div>
 </div>
 </div>
-<div id="conclusión" class="section level2" number="5.5">
-<h2><span class="header-section-number">5.5</span> Conclusión</h2>
+<div id="conclusión" class="section level2" number="6.5">
+<h2><span class="header-section-number">6.5</span> Conclusión</h2>
 <p>A partir de los resultados obtenidos en este análisis, se pueden
 extraer varias conclusiones clave relacionadas con los objetivos
 planteados. El principal objetivo era evaluar si forzar la división de
@@ -3587,8 +3687,8 @@ muy útil en determinadas situaciones, especialmente cuando se dispone de
 conocimiento experto que permite identificar variables con alta
 capacidad predictiva.</p>
 </div>
-<div id="limitaciones" class="section level2" number="5.6">
-<h2><span class="header-section-number">5.6</span> Limitaciones</h2>
+<div id="limitaciones" class="section level2" number="6.6">
+<h2><span class="header-section-number">6.6</span> Limitaciones</h2>
 <p>A pesar del balanceo de clases en los datos de entrenamiento mediante
 <em>downsampling</em>, el conjunto de test mantuvo un fuerte desbalance,
 lo que afectó negativamente a las métricas de significación estadística.

@@ -51,7 +51,7 @@ library(ggplot2)
 library(doParallel)
 library(dplyr)
 library(pROC)
-library(DMwR)
+library(DMwR2)
 ```
 
 Defino mi directorio de trabajo:
@@ -163,20 +163,55 @@ tune_grid <- expand.grid(
   min.node.size = c(10, 20, 30)
 )
 
-control <- trainControl(
+control_cv <- trainControl(
   method = "cv",
-  number = 10,
+  number = 5,
   verboseIter = FALSE)
 
-modelo_M <- train(
+modelo_cv_M <- train(
   TenYearCHD ~ .,
   data = train_dataM,
   method = "ranger",
   tuneGrid = tune_grid,
   metric = "Accuracy",
-  trControl = control,
+  trControl = control_cv,
   max.depth=10
 )
+```
+
+En el código anterior optimizo los hiperparámetros usando un Cross validation de 5. Eligo la mejor combinación de hiperparámetros en base a la Accuracy
+
+```{r}
+mejores_hiperparametros <- modelo_cv_M$bestTune
+print(mejores_hiperparametros)
+```
+
+Ahora entreno con bootstrap = 15
+
+```{r}
+control_boot <- trainControl(
+  method= "boot",
+  number = 15,
+  classProbs= TRUE,
+)
+
+modelo_bootM <- train(
+  TenYearCHD ~ .,
+  data = train_dataM,
+  method= "ranger",
+  tuneGrid= mejores_hiperparametros,
+  metric = "Accuracy",
+  trControl= control_boot
+)
+```
+
+```{r}
+resultado_boot <- modelo_bootM$resample
+media <- mean(resultado_boot$Accuracy)
+ic <- quantile(resultado_boot$Accuracy, probs = c(0.025, 0.975))
+
+cat("Media Accuracy:", round(media, 3), "\n")
+cat("IC 95%:", round(ic[1], 3), '-', round(ic[2], 3), '\n')
 ```
 
 ## Modelo Random Forest con la matriz MC
@@ -184,7 +219,6 @@ modelo_M <- train(
 Divido los datos en entrenamiento y test
 
 ```{r}
-train_index <- createDataPartition(df_MC$TenYearCHD, p= 0.8, list = FALSE)
 train_dataMC <- df_MC[train_index,]
 test_dataMC <- df_MC[-train_index,]
 ```
@@ -210,10 +244,10 @@ tune_grid <- expand.grid(
 
 control <- trainControl(
   method = "cv",
-  number = 10,
+  number = 5,
   verboseIter = FALSE)
 
-modelo_MC <- train(
+modelo_cv_MC <- train(
   TenYearCHD ~ .,
   data = train_dataMC,
   method = "ranger",
@@ -224,6 +258,40 @@ modelo_MC <- train(
 )
 ```
 
+Eligo la mejor combinación de hiperparámetros en base a la Accuracy
+
+```{r}
+mejores_hiperparametros <- modelo_cv_MC$bestTune
+print(mejores_hiperparametros)
+```
+
+Ahora entreno con bootstrap = 15
+
+```{r}
+control_boot <- trainControl(
+  method= "boot",
+  number = 15,
+  classProbs= TRUE,
+)
+
+modelo_bootMC <- train(
+  TenYearCHD ~ .,
+  data = train_dataMC,
+  method= "ranger",
+  tuneGrid= mejores_hiperparametros,
+  metric = "Accuracy",
+  trControl= control_boot
+)
+```
+
+```{r}
+resultado_boot_MC <- modelo_bootMC$resample
+media <- mean(resultado_boot_MC$Accuracy)
+ic <- quantile(resultado_boot_MC$Accuracy, probs = c(0.025, 0.975))
+
+cat("Media Accuracy:", round(media, 3), "\n")
+cat("IC 95%:", round(ic[1], 3), '-', round(ic[2], 3), '\n')
+```
 
 ## Modelo de Random Forest usando `always.split.variables`
 
@@ -266,7 +334,7 @@ tune_grid <- expand.grid(
 
 control <- trainControl(
   method = "cv",
-  number = 10,
+  number = 5,
   verboseIter = FALSE)
 
 modelo_split <- list()
@@ -287,50 +355,7 @@ modelo_split[[var_c]] <- modeloSplit
 }
 ```
 
-# Resultados de los Modelos
-
-## Resultados RF con Dataframe M
-
-Imprimo los resultados del entrenamiento del modelo junto con los mejores hiperparámetros
-
-```{r}
-modelo_M$results
-modelo_M$bestTune
-```
-
-Obtengo que los hiperparámetros que mejor resultado dan son `mtry`= 1 y `min.node.size`=30. Voy a probar con los datos de test con este modelo.
-
-```{r}
-pred_M <- predict(modelo_M, newdata = test_dataM)
-conf_M <- confusionMatrix(pred_M, test_dataM$TenYearCHD)
-```
-
-Ahora observo los resultados de la matriz de confusión
-
-```{r}
-print(conf_M)
-```
-## Resultados RF con Dataframe MC
-
-```{r}
-modelo_MC$results
-modelo_MC$bestTune
-```
-
-Como se observa los resultados mejoran ligeramente frente al modelo que usa el dataset M como es lógico, aún así está mejora no es muy sustancial. Voy a comprobar los resultados con los datos de test.
-
-```{r}
-pred_MC <- predict(modelo_MC, newdata = test_dataMC)
-conf_MC <- confusionMatrix(pred_MC, test_dataMC$TenYearCHD)
-```
-
-```{r}
-print(conf_MC)
-```
-
-## Resultados RF con `always.split.variables`
-
-Primero voy a organizar los resultados de los 4 modelos en un mismo Dataframe para verlos mucho más claros
+Imprimo los mejores hiperparámetros para cada una de las variables clínicas
 
 ```{r}
 resumen_modelos_split <- lapply(names(modelo_split), function(var_name) {
@@ -344,49 +369,139 @@ resumen_modelos_split <- lapply(names(modelo_split), function(var_name) {
     variable_clinica = var_name,
     mtry = modelo$bestTune$mtry,
     min_node_size = modelo$bestTune$min.node.size,
-    Accuracy = round(best$Accuracy, 4),
-    Kappa = round(best$Kappa,4)
+    Accuracy = round(best$Accuracy, 4)
   )
 }) %>% bind_rows()
 
-resumen_modelos_split <- resumen_modelos_split %>% arrange(desc(Accuracy))
-```
-
-Ahora imprimo por pantalla los resultados organizados
-
-```{r}
 print(resumen_modelos_split)
 ```
 
-En los resultados vemos los mejores hiperparámetros para cada una de las variables clínicas junto con sus métricas. La mejor variable es `education` con un `mtry` = 1 y un `min.node.size` de 20. La variable menos explictiva de todas es `male`.
+```{r}
+boot_splitM <- list()
 
-A pesar de que education es claramente la mejor voy a probar a a predecir sobre los datos de test usando todas las variables para ver como varía el rendimiento de cada una.
-
-Voy a ir en orden respecto a la tabla de resultados, primero para la variable `education` luego para `age`, `BMI` y `male`.
+for (var_c in names(modelo_split)) {
+  data_train <- dataset_con_split[[var_c]]$train
+  
+  best <- modelo_split[[var_c]]$bestTune
+  
+  control_boot <- trainControl(
+    method = "boot",
+    number = 15,  
+    classProbs = TRUE,
+  )
+  
+  modelo_boot <- train(
+    TenYearCHD ~ .,
+    data = data_train,
+    method = "ranger",
+    tuneGrid = best,
+    metric = "Accuracy",
+    trControl = control_boot,
+    max.depth = 10,
+    always.split.variables = var_c
+  )
+  
+  boot_splitM[[var_c]] <- modelo_boot
+}
+```
 
 ```{r}
-pred_education <- predict(modelo_split[["education"]], newdata = dataset_con_split[["education"]]$test)
+resultados_boot_split <- list()
+
+for (var_a in names(boot_splitM)) {
+  cat("Variable forzada:", var_a, "\n")
+  
+  resultado_boot <- boot_splitM[[var_a]]$resample
+  resultado_boot$Variable <- var_a
+  resultados_boot_split[[var_a]] <- resultado_boot
+  
+  media <- mean(resultado_boot$Accuracy, na.rm = TRUE)
+  ic <- quantile(resultado_boot$Accuracy, probs = c(0.025, 0.975), na.rm = TRUE)
+  
+  cat("  → Media Accuracy:", round(media, 3), "\n")
+  cat("  → IC 95%:", round(ic[1], 3), "-", round(ic[2], 3), "\n\n")
+}
+```
+
+# BoxPlot de Todos los modelos
+
+```{r}
+resample_M <- modelo_bootM$resample %>%
+  mutate(Modelo = "M")
+
+resample_MC <- modelo_bootMC$resample %>%
+  mutate(Modelo = "MC")
+
+resample_Msplit <- lapply(names(boot_splitM), function(var_c) {
+  df <- boot_splitM[[var_c]]$resample
+  df <- df %>%
+    mutate(Modelo = paste0("M_", var_c))
+  df
+}) %>% bind_rows()
+
+resample_total <- bind_rows(resample_M, resample_MC, resample_Msplit)
+
+ggplot(resample_total, aes(x = Modelo, y = Accuracy, fill = Modelo)) +
+  geom_boxplot(color = "darkgreen") +
+  theme_minimal() +
+  labs(
+    title = "Comparativa de Accuracy entre modelos",
+    x = "Modelo",
+    y = "Accuracy"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+# Resultados sobre los datos de Test
+
+## Resultados test sobre M
+
+```{r}
+pred_M <- predict(modelo_bootM, newdata = test_dataM)
+conf_M <- confusionMatrix(pred_M, test_dataM$TenYearCHD)
+```
+
+Ahora observo los resultados de la matriz de confusión
+
+```{r}
+print(conf_M)
+```
+## Resultados RF con Dataframe MC sobre Test
+
+```{r}
+pred_MC <- predict(modelo_bootMC, newdata = test_dataMC)
+conf_MC <- confusionMatrix(pred_MC, test_dataMC$TenYearCHD)
+```
+
+```{r}
+print(conf_MC)
+```
+
+## Resultados RF con `always.split.variables` sobre Test
+
+```{r}
+pred_education <- predict(boot_splitM[["education"]], newdata = dataset_con_split[["education"]]$test)
 
 conf_education <- confusionMatrix(data = pred_education, reference = dataset_con_split[["education"]]$test$TenYearCHD)
 print(conf_education)
 ```
 
 ```{r}
-pred_age <- predict(modelo_split[["age"]], newdata = dataset_con_split[["age"]]$test)
+pred_age <- predict(boot_splitM[["age"]], newdata = dataset_con_split[["age"]]$test)
 conf_age <- confusionMatrix(data = pred_age, reference = dataset_con_split[["age"]]$test$TenYearCHD)
 
 print(conf_age)
 ```
 
 ```{r}
-pred_BMI <- predict(modelo_split[["BMI"]], newdata = dataset_con_split[["BMI"]]$test)
+pred_BMI <- predict(boot_splitM[["BMI"]], newdata = dataset_con_split[["BMI"]]$test)
 
 conf_BMI <- confusionMatrix(data = pred_BMI, reference = dataset_con_split[["BMI"]]$test$TenYearCHD)
 print(conf_BMI)
 ```
 
 ```{r}
-pred_male <- predict(modelo_split[["male"]], newdata = dataset_con_split[["male"]]$test)
+pred_male <- predict(boot_splitM[["male"]], newdata = dataset_con_split[["male"]]$test)
 
 conf_male <- confusionMatrix(data = pred_male, reference = dataset_con_split[["male"]]$test$TenYearCHD)
 print(conf_male)
