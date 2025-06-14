@@ -1,86 +1,89 @@
-# Análisis predictivo sobre datos reales del estudio ROSMAP
+# Predictive Analysis on Real ROSMAP Data
 
-Esta carpeta contiene el código y los resultados del análisis realizado con datos reales del estudio ROSMAP (Religious Orders Study and Memory and Aging Project), centrado en integrar datos transcriptómicos post-mortem con variables clínicas, técnicas y neuropatológicas para construir modelos de clasificación mediante Random Forest.
-
----
-
-## Objetivos
-
-- Evaluar cómo la inclusión de variables confusoras (clínicas, técnicas y neuropatológicas) afecta al rendimiento predictivo de modelos Random Forest
-- Identificar genes cuya importancia se mantiene estable a lo largo de múltiples repeticiones, y que puedan ser considerados biomarcadores transcriptómicos robustos
-- Analizar cómo el parámetro `always.split.variables` puede mejorar la interpretación de modelos, priorizando variables confusoras altamente informativas.
-- Validar el efecto de la eliminación de genes redundantes (alta correlación o baja varianza) sobre el rendimiento y la estabilidad del modelo.
+This folder contains the code and results of the analysis conducted using real data from the ROSMAP study (Religious Orders Study and Memory and Aging Project). The focus is on integrating post-mortem transcriptomic data with clinical, technical, and neuropathological variables to build classification models using Random Forest.
 
 ---
 
-## Contenido de la carpeta
+##  Objectives
 
-- entrenamiento_rosmap.Rmd: Script principal en R Markdown que contiene todo el flujo de análisis: preprocesamiento, filtrado de genes, entrenamiento de modelos y análisis de importancia.
-- entrenamiento_rosmap.html: Versión renderizada del documento anterior.
-- Scripts: Carpeta con funciones auxiliares para entrenamiento de los diferentes modelos en un clúster.
-- Datos: Carpeta que incluye dos archivos `.rds`:
-  - `ROSMAP_RINPMIAGESEX_covs.rds`: variables confusoras
-  - `ROSMAP_RINPMIAGESEX_resids.rds`:  datos ómicos.
-
---- 
-
-## Descripción del análisis
-
-1. Carga de datos y preprocesamiento
-   - Unión de matriz de expresión génica (`M`) y variables confusoras (`C`)
-   - Eliminación de genes altamente correlacionados y con baja varianza para la creación de la matriz (`M`)
-   - Creación de los distintos conjuntos de datos para entrenar modelos comparables. 
-     
-2. Entrenamiento de los modelos
-   - `M` y `M'`: Solo expresión génica (sin filtrado y con filtrado).
-   - `MC` y `M'C`: Expresión + covariables clínicas y técnicas.
-   - Modelos con forzado con variables forzadas + `always.split.variables`: Modelos con variables confusoras forzadas en los splits
-   - `C`: Modelo con solo las variables confusoras
-     
-3. Validación
-   - Cross-validation (5-fold) + 30 repeticiones por bootstrapping
-   - Métrica principal: `Accuracy`
-     
-4. Análisis de importancia:
-   - Extracción de `varImp()` para cada repetición.
-   - Evaluación de estabilidad de los rankings mediante correlación de Spearman y análisis de varianza de posiciones.
-   - Identificación de genes estables como posibles biomarcadores.
-     
-5. Estudio del efecto estabilizador de covariables
-   - Comparación de rankings de importancia entre modelos con y sin covariables forzadas.
-   - Detección de genes cuya posición en el ranking mejora al introducir variables confusoras
----
-
-## Variables utilizadas
-
-- **Matriz M**: Análisis transcriptómico post-mortem altamente dimensional
-- **Matriz C**: Variables confusoras
-  - Nueropatológicas: `braaksc` (estadios de Braak) y `ceradsc` (escala CERAD).
-  - Demográficas: `msex` (sexo, codificado como factor)
-  - Técnicas: `rin` (Número de integridad del ADN), `pmi` (Intervalo post-mortem) y `batch` (lote experimental)
-- Variable objetivo: `cogdx`, que representa el diagnóstico cognitivo del sujeto en el momento del fallecimiento. Incluye 5 clases:
-  - `NCI`: Sin deterioro cognitivo
-  - `MCI`: Deterioro cognitivo leve sin causa aparente además de Alzheimer.
-  - `MCI con comorbilidad`: MCI con otra causa adicional
-  - `AD`: Enfermedad de Alzheimer sin otras causas.
-  - `AD con comorbilidad`: Alzheimer acompañado de otra causa de deterioro
- 
----
-
-## Resultados destacados
-
-- El mejor modelo fue `M' + ceradsc`, combinando un subconjunto filtrado de genes con una variable neuropatológica forzada.
-- Los modelos con forzados explícito de las variables neuropatológicas `braaksc` y `ceradsc` superaron en precisión a llos modelos completos (`MC` y `M'C`)
-- El análisis de estabilidad permitió identificar genes como `MTCP1`, `HPCAL1`, `CAMK4` y `MMP24`, con respaldo bibliográfico como posibles biomarcadores de la EA.
-- Se observaron efectos estabilizadores selectivos, algunos genes mejoran su estabilidad solo al introducir variables confusoras específicas, sobre todo `braaksc` y `ceradsc`, lo que sugiere una relación biológica genuina.
+- Evaluate how the inclusion of confounding variables (clinical, technical, and neuropathological) affects the predictive performance of Random Forest models.
+- Identify genes whose importance remains stable across multiple repetitions, and which may be considered robust transcriptomic biomarkers.
+- Analyze how the `always.split.variables` parameter can improve model interpretability by prioritizing highly informative confounders.
+- Validate the impact of removing redundant genes (high correlation or low variance) on model performance and stability.
 
 ---
 
-## Reproducibilidad
+## Folder contents
+
+- `entrenamiento_rosmap.Rmd`: Main R Markdown script containing the full analysis pipeline: preprocessing, gene filtering, model training, and variable importance analysis.
+- `entrenamiento_rosmap.html`: Rendered version of the R Markdown file.
+- `Scripts/`: Folder with helper functions for training various models on a computing cluster.
+- `Datos/`: Folder containing two `.rds` files:
+  - `ROSMAP_RINPMIAGESEX_covs.rds`: confounding variables
+  - `ROSMAP_RINPMIAGESEX_resids.rds`: omics data
+
+---
+
+## Analysis description
+
+1. **Data loading and preprocessing**
+   - Merge gene expression matrix (**M**) and confounders (**C**)
+   - Remove highly correlated and low-variance genes to construct filtered matrix (**M'**)
+   - Create datasets for training comparable models
+
+2. **Model training**
+   - `M` and `M'`: gene expression only (unfiltered and filtered)
+   - `MC` and `M'C`: expression + clinical/technical covariates
+   - Forced confounders + `always.split.variables`: confounding variables are forced in splits
+   - `C`: confounders only
+
+3. **Validation**
+   - 5-fold cross-validation + 30 bootstraps per model
+   - Main metric: **Accuracy**
+
+4. **Variable importance analysis**
+   - Extract `varImp()` for each repetition
+   - Assess ranking stability using Spearman correlation and variance analysis
+   - Identify stable genes as potential biomarkers
+
+5. **Stabilizing effect of covariates**
+   - Compare variable importance rankings with and without forced confounders
+   - Detect genes whose importance ranking improves when confounders are included
+
+---
+
+## Variables used
+
+- **Matrix M**: High-dimensional post-mortem transcriptomic data
+- **Matrix C**: Confounders
+  - **Neuropathological**: `braaksc` (Braak staging), `ceradsc` (CERAD score)
+  - **Demographic**: `msex` (sex, coded as factor)
+  - **Technical**: `rin` (RNA integrity number), `pmi` (post-mortem interval), `batch` (experimental batch)
+- **Target variable**: `cogdx`, representing cognitive diagnosis at time of death, with 5 classes:
+  - `NCI`: No cognitive impairment
+  - `MCI`: Mild cognitive impairment, not explained by other causes
+  - `MCI with comorbidity`: MCI with another cause
+  - `AD`: Alzheimer's disease without other causes
+  - `AD with comorbidity`: AD with additional causes of impairment
+
+---
+
+## Key results
+
+- The best model was `M' + ceradsc`, combining a filtered gene subset with a forced neuropathological variable.
+- Models that explicitly forced `braaksc` and `ceradsc` outperformed full models (`MC`, `M'C`).
+- Stability analysis identified genes such as `MTCP1`, `HPCAL1`, `CAMK4`, and `MMP24` as potential biomarkers, supported by literature.
+- Selective stabilizing effects were observed: certain genes became more stable only when specific confounders (especially `braaksc`, `ceradsc`) were included, suggesting genuine biological relevance.
+
+---
+
+## Reproducibility
+
+To reproduce the analysis in R:
 
 ```r
 rmarkdown::render("entrenamiento_rosmap.Rmd")
-``` 
+
 
 
    

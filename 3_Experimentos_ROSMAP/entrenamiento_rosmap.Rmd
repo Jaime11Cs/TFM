@@ -23,10 +23,16 @@ library(caret)
 library(ranger)
 library(ggplot2)
 library(dplyr)
+library(tibble)
 library(doParallel)
 library(scales)
 library(reshape2)
 library(corrplot)
+library(patchwork)
+library(ggrepel)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(ReactomePA)
 ```
 
 Defino una semilla fija para reproducibiilidad
@@ -37,49 +43,53 @@ set.seed(123)
 
 # Introducción
 
-La demencia se define como el deterioro adquirido de las capacidades cognitivas que dificulta la realización satisfactoria de las actividades de la vida diaria. El Alzheimer es una demencia progresiva que tiene el déficit de memoria como uno de sus síntomas más tempranos y pronunciados. Por lo general, el paciente empeora progresivamente, mostrando problemas perceptivos, de lenguaje y emocionales a medida que la enfermedad avanza [@romano2007enfermedad].
+La demencia se define como el deterioro adquirido de las capacidades cognitivas que dificulta la realización satisfactoria de las actividades de la vida diaria. El Alzheimer es una demencia progresiva que tiene el déficit de memoria como uno de sus síntomas más tempranos y pronunciados. Por lo general, el paciente empeora progresivamente, mostrando problemas perceptivos, de lenguaje y emocionales a medida que la enfermedad avanza.
 
-La enfermedad de Alzheimer es la principal causa de demencia entre los adultos mayores. Se trata de una patología de etiología compleja, en algunos casos hereditaria [@donoso2003enfermedad], que se caracteriza clínicamente por un deterioro progresivo de la memoria y otras funciones cognitivas, y neuropatológicamente por la acumulación de placas de β-amiloide, ovillos neurofibrilares de **proteína tau hiperfosforilada**, así como otros procesos como la esclerosis hipocampal o la presencia de cuerpos de Lewy [@bennett2018rosmap].
+La enfermedad de Alzheimer es la principal causa de demencia entre los adultos mayores. Se trata de una patología de etiología compleja, en algunos casos hereditaria, que se caracteriza clínicamente por un deterioro progresivo de la memoria y otras funciones cognitivas, y neuropatológicamente por la acumulación de placas de β-amiloide, ovillos neurofibrilares de **proteína tau hiperfosforilada**, así como otros procesos como la esclerosis hipocampal o la presencia de cuerpos de Lewy.
 
-Estudiar los mecanismos biológicos subyacentes a la demencia tipo Alzheimer y su evolución clínica requiere datos detallados a múltiples niveles: clínico, neuropatológico y transcriptómico. En este contexto, dos estudios longitudinales — el **Religious Orders Study (ROS)**, iniciado en 1994, y el **Rush Memory and Aging Project (MAP)**, iniciado en 1997— y conjuntamente conocidos como *ROSMAP*, constituyen una de las principales fuentes de datos sobre envejecimiento y neurodegeneración. Ambos estudios reclutan personas mayores sin demencia al inicio: ROS inscribe a monjas, sacerdotes y hermanos religiosos de todo Estados Unidos, mientras que MAP incluye personas laicas del noreste de Illinois. Todos los participantes consienten la donación post mortem de tejido cerebral, lo que permite un enfoque clínico-patológico integral [@bennett2018rosmap].
+Estudiar los mecanismos biológicos subyacentes a la demencia tipo Alzheimer y su evolución clínica requiere datos detallados a múltiples niveles: clínico, neuropatológico y transcriptómico. En este contexto, dos estudios longitudinales — el **Religious Orders Study (ROS)**, iniciado en 1994, y el **Rush Memory and Aging Project (MAP)**, iniciado en 1997, conjuntamente conocidos como *ROSMAP*, constituyen una de las principales fuentes de datos sobre envejecimiento y neurodegeneración. Ambos estudios reclutan personas mayores sin demencia al inicio: ROS inscribe a monjas, sacerdotes y hermanos religiosos de todo Estados Unidos, mientras que MAP incluye personas laicas del noreste de Illinois. Todos los participantes consienten la donación post mortem de tejido cerebral, lo que permite un enfoque clínico-patológico integral.
 
-Hasta finales de 2017, los estudios habían inscrito a 3.414 personas, de las cuales el 72,6% eran mujeres y el 88,2% eran personas blancas no latinas. Para estos participantes, el proyecto ROSMAP ha recopilado datos clínicos y cognitivos, junto con perfiles multi-ómicos del cerebro y la sangre (incluyendo transcriptómica, epigenómica, proteómica y metabolómica), además de evaluaciones neuropatológicas detalladas. Esta riqueza de datos ha permitido avances significativos en el estudio de la progresión clínica del Alzheimer, la identificación de fenotipos no cognitivos, y la caracterización de factores de resiliencia cerebral, es decir, la capacidad de algunos individuos para resistir mejor los efectos de la patología cerebral [@bennett2018rosmap].
+Hasta finales de 2017, los estudios habían inscrito a 3.414 personas, de las cuales el 72,6% eran mujeres y el 88,2% eran personas blancas no latinas. Para estos participantes, el proyecto ROSMAP ha recopilado datos clínicos y cognitivos, junto con perfiles multi-ómicos del cerebro y la sangre (incluyendo transcriptómica, epigenómica, proteómica y metabolómica), además de evaluaciones neuropatológicas detalladas.
 
-En este trabajo se utilizarán datos reales del proyecto **ROSMAP** para construir modelos predictivos de la variable `cogdx` [@bennett2018rosmap]. Esta variable representa el diagnóstico clínico final que se asigna en el momento del fallecimiento por médicos del estudio, basado en la historia clínica y una evaluación neuropsicológica detallada, realizada sin conocimiento de los hallazgos neuropatológicos. La escala `cogdx` incluye las siguientes categorías:
+En este trabajo se utilizarán datos reales del proyecto **ROSMAP** para construir modelos predictivos de la variable `cogdx`. Esta variable representa el diagnóstico clínico final que se asigna en el momento del fallecimiento por médicos del estudio, basado en la historia clínica y una evaluación neuropsicológica detallada. La escala `cogdx` incluye las siguientes categorías:
 
 -   **1. NCI**: Sin deterioro cognitivo.\
 -   **2. MCI**: Deterioro cognitivo leve sin otra causa aparente además de la enfermedad de Alzheimer.\
 -   **3. MCI con comorbilidad**: MCI con otra causa adicional de deterioro cognitivo además del Alzheimer.\
 -   **4. AD**: Enfermedad de Alzheimer sin otras causas adicionales.\
--   **5. AD con comorbilidad**: Alzheimer con otra causa adicional de deterioro cognitivo [@higginbotham2023unbiased].
+-   **5. AD con comorbilidad**: Alzheimer con otra causa adicional de deterioro cognitivo.
 
-Además, se integrarán datos transcriptómicos de expresión génica (matriz `M`) y variables clínicas (matriz `C`). Se aplicarán técnicas de filtrado y reducción de dimensionalidad para obtener una matriz optimizada de predictores génicos (`M'`), y se evaluará el efecto de incluir variables confusoras como el sexo, el RIN (RNA Integrity Number), el intervalo post mortem, y las clasificaciones neuropatológicas de Braak y CERAD.
+Además, se integrarán datos transcriptómicos de expresión génica (matriz `M`) y variables confusoras (matriz `C`). Se aplicarán técnicas de filtrado y reducción de dimensionalidad para obtener una matriz optimizada de predictores génicos (`M'`), y se evaluará el efecto de incluir variables confusoras como el sexo, el RIN (RNA Integrity Number), el intervalo post mortem, y las clasificaciones neuropatológicas de Braak y CERAD.
 
 # Objetivos
 
-El presente trabajo tiene como finalidad explorar el potencial predictivo de datos transcriptómicos y clínicos en relación con el diagnóstico clínico de demencia (`cogdx`) en individuos del estudio **ROSMAP**. Para ello se desarrollarán modelos de clasificación utilizando matrices de expresión génica y covariables clínicas, evaluando el impacto de distintos esquemas de preprocesamiento y control por variables confundidoras.
+El presente trabajo tiene como finalidad explorar el potencial predictivo de datos transcriptómicos y de las variables confusoras (`C`) en relación con el diagnóstico clínico de demencia (`cogdx`) en individuos del estudio **ROSMAP**. Para ello se desarrollarán modelos de clasificación utilizando matrices de expresión génica y covariables clínicas y técnicas, evaluando el impacto de distintos esquemas de preprocesamiento y control por variables confusoras.
 
 En primer lugar, se aplicarán técnicas de filtrado a la matriz de expresión M, con el objetivo de reducir la dimensionalidad del espacio de predictores y eliminar información redundante o no informativa. Este proceso generará una matriz alternativa (M'), construida eliminando genes con baja varianza entre individuos (`nearZeroVar`) y aquellos altamente correlacionados entre sí (`findCorrelation`).
 
-A continuación se contruirán distintos modelos de predicción del estado cognitivo utilizando diversas combinaciones de datos: la matriz de expresión génica completa (M), la matriz filtrada (M'), las variables clínicas (C), y las combinaciones MC y M'C, junto con el parámetro `always,split.variables` para comprobar si forzar la divisón en una variable informativa mejroa el rendimiento del modelo. En todos los casos, se tendrá en cuenta el posible efecto de variables confundidoras conocidas como el sexo (`msex`), el intervalo post-mortem (`pmi`), el número de integridad del ARN (`rin`), el estadio de Braak (`braaksc`) y la clasificación CERAD (`ceradsc`), que se incorporarán explícitamente como variables forzadas en los modelos.
+A continuación se contruirán distintos modelos de predicción del estado cognitivo utilizando diversas combinaciones de datos: la matriz de expresión génica completa (M), la matriz filtrada (M'), las variables confusoras (C), y las combinaciones MC y M'C, junto con el parámetro `always,split.variables` para comprobar como se comporta el modelo al forzar en los splits diferentes variables confusoras. En todos los casos, se tendrá en cuenta el posible efecto de variables confusoras que serán las siguientes: sexo (`msex`), el intervalo post-mortem (`pmi`), el número de integridad del ARN (`rin`), el estadio de Braak (`braaksc`) y la clasificación CERAD (`ceradsc`).
 
-Finalmente, se evaluará el rendimiento de los modelos mediante métricas adecuadas, como la **Accuracy**, comparando el impacto relativo de la información transcriptómica frente a la clínica, así como el efecto de la reducción de dimensionalidad sobre la capacidad predictiva.
+Finalmente, se evaluará el rendimiento de los modelos mediante métricas adecuadas, como la **Accuracy**, y la matriz de importancia de variables para vr como se ajusta el modelo a la introducción o no introducción de variables confusoras y como estas afectan a los genes.
 
 # Carga, descripción y preprocesamiento de los datos
 
 Primero defino mi directorio de trabajo
 
 ```{r}
-setwd("~/Escritorio/TFM/DatosReales")
+setwd("~/TFM_GitHub/TFM/3_Experimentos_ROSMAP")
 ```
 
 Fijo una semillo aleatoria para garantizar la reproducibilidad
 
-Ahora cargo los datos que se van a usar
+```{r}
+set.seed(123)
+```
+
+Ahora cargo los datos que se van a usar.
 
 ```{r}
-M <- readRDS("ROSMAP_RINPMIAGESEX_resids.rds")
-C <- readRDS("ROSMAP_RINPMIAGESEX_covs.rds")
+M <- readRDS("Datos/ROSMAP_RINPMIAGESEX_resids.rds")
+C <- readRDS("Datos/ROSMAP_RINPMIAGESEX_covs.rds")
 M <- as.data.frame(M)
 ```
 
@@ -93,7 +103,7 @@ C$Alzheimer <- factor(
 )
 ```
 
-La matriz `C` es un data.frame con 342 indviduos (observaciones) y 13 variables clínicas (columnas). Incluye:
+La matriz `C` es un data.frame con 342 indviduos (observaciones) y 13 variables clínicas y técnicas (columnas). Incluye:
 
 -   **Identificadores:** `mrna_id` (ID de la muestra) y `projid` (ID del proyecto).
 -   **Información demográfica:** `age_death`(edad del fallecimieto), `msex`(Sexo, codificado como factor), `study` (cohorte ROS o MAP).
@@ -108,9 +118,7 @@ Para el modelado se usará `cogdx` como variable objetivo, y se considerarán co
 str(M)
 ```
 
-La matriz `M` contiene los niveles de expresión génica residualizados para los para los mismos 342 individuos presentes en la matriz `C`. Las filas representan los sujetos y las columnas corresponden a genes o transcritos previamente ajustados por variables técnicas (edad, sexo, RIN, lote experimental).
-
-Cada columna de `M` representa la expresión de un gen específico ya transformada para eliminar la variabilidad atribuible a factores de confusión. Esta matriz constituye la base del análisis transcriptómico, tanto en su forma original (`M`) como tras el filtrado de predictores (`M'`).
+La matriz `M` contiene los niveles de expresión génica  para los para los mismos 342 individuos presentes en la matriz `C`. Las filas representan los sujetos y las columnas corresponden a genes o transcritos. Esta matriz constituye la base del análisis transcriptómico, tanto en su forma original (`M`) como tras el filtrado de predictores (`M'`).
 
 Estas expresiones se utilizarán como predictores en los modelos de clasificación del diagnóstico clínico `cogdx`.
 
@@ -123,7 +131,7 @@ sum(is.na(M))
 sum(is.na(C))
 ```
 
-El resultado indica que no hay valores nulos para ninguna de los dos matrices, por lo tanto ahora sigo con el siguiente paso del análisis, que es la generación de la matrix `M` aplicando dos filtrados, **la eliminación de genes con varianza casi nula (`nearZeroVar`)** y la **eliminación de genes altamente correlacionados** con `findCorrelation` y usando un umbral de (-0.9,0.9).
+El resultado indica que no hay valores nulos para ninguna de los dos matrices, por lo tanto ahora sigo con el siguiente paso del análisis, que es la generación de la matrix `M'` aplicando dos filtrados, **la eliminación de genes con varianza casi nula (`nearZeroVar`)** y la **eliminación de genes altamente correlacionados** con `findCorrelation` y usando un umbral de 0.9 absoluto.
 
 ```{r}
 cor_matrix <- cor(M)
@@ -135,23 +143,6 @@ correlated_pairs <- data.frame(
   Variable2 = colnames(cor_matrix)[high_cor[, 2]],
   Correlation = cor_matrix[high_cor]
 )
-
-top20_pairs <- correlated_pairs[order(abs(correlated_pairs$Correlation), decreasing = TRUE), ][1:20, ]
-
-# Obtener los genes únicos implicados en esos 20 pares
-genes_top20 <- unique(c(top20_pairs$Variable1, top20_pairs$Variable2))
-
-sub_cor_matrix <- cor_matrix[genes_top20, genes_top20]
-
-corrplot(sub_cor_matrix,
-         method = "circle",
-         type = "lower",
-         tl.col = "black",
-         tl.srt = 45,
-         tl.cex = 0.8,
-         col = colorRampPalette(c("blue", "white", "red"))(200),
-         title = "Top 20 genes altamente correlacionados",
-         mar = c(0, 0, 2, 0))
 ```
 
 
@@ -164,15 +155,9 @@ length(genes_eliminados)
 dim(M_sin_correlacion)
 ```
 
-Como paso previo al filtrado de varianza, se evaluó la correlación entre los genes de la matriz de expresión `M`. Se detectaron múltiples pares de predictores con correlaciones absolutas sueriores a 0.8, y se eliminaron aquellos predictores mediante el algoritmo `findcorrelation` con un umbral de 0.9.
-
 Este procedimiento eliminó `r length(genes_eliminados)` genes, resultando en una matriz de `M_sin_correlacion` con `r ncol(M_sin_correlacion)` predictores. La eliminación de la redundancia mejora la estabilidad de los modelos posteriores y reduce la colinealidad.
 
-Las primeras variables eliminadas fueron:
-
-```{r}
-head(genes_eliminados, 10)
-```
+Una vez eliminados los genes redundantes por correlación, se aplicó un filtrado adicional para eliminar aquellos genes cuya varianza entre individuos era muy baja. Este tipo de predictores suelen carecer de valor discriminativo y pueden contribuir al sobreajuste. Se utilizó la función `nearZeroVar` del paquete `caret`, que identifica predictores con una proporción muy alta de valores repetidos o poca variabilidad entre observaciones.
 
 ```{r}
 nzv_genes <- nearZeroVar(M_sin_correlacion)
@@ -182,30 +167,28 @@ genes_baja_varianza <- colnames(M_sin_correlacion)[nzv_genes]
 
 length(genes_baja_varianza)
 ```
-
-Una vez eliminados los genes redundantes por correlación, se aplicó un filtrado adicional para eliminar aquellos genes cuya varianza entre individuos era muy baja. Este tipo de predictores suelen carecer de valor discriminativo y pueden contribuir al sobreajuste. Se utilizó la función `nearZeroVar` del paquete `caret`, que identifica predictores con una proporción muy alta de valores repetidos o poca variabilidad entre observaciones.
-
 En este caso, **no se eliminaron genes por este criterio**, lo cuál sugiere que las variables restantes conservan una variabilidad suficiente para ser utilizadas como predictores en los modelos posteriores.
 
 ## Creación de los Datasets
 
-Ahora que ya se han eliminado los genes redundantes se va a pasar a construir las combinaciones de predictores:
+Ahora que ya se han eliminado los genes redundantes se va a pasar a construir las DataFrames:
 
 -   `M + C`
--   `M' +C`
+-   `M' + C`
 
 Siempre teniendo claro que:
 
 -   **M** es la matriz de expresión génica original
 -   **M'** es la matriz de expresión filtrada por correlación y varianza
--   **C** es la matriz de covariables clínicas, aunque de estas solo se utilizarán `msex`, `pmi`, `rin`, `braaksc`, `ceradsc` y `batch` y la variable a predecir `cogdx`
+-   **C** es la matriz de variables confusoras, aunque de estas solo se utilizarán `msex`, `pmi`, `rin`, `braaksc`, `ceradsc` y `batch` y la variable a predecir `cogdx`.
 
 ```{r}
 clase <- "cogdx"
 vars_C <- c("msex", "pmi", "rin", "braaksc", "ceradsc", "batch")
 Y <- C$Alzheimer
 
-cofounders <- C %>% select(all_of(vars_C))
+cofounders <- dplyr::select(C, all_of(vars_C))
+
 
 df_M <- cbind(M, Alzheimer = Y)
 df_C <- cbind(cofounders, Alzheimer = Y)
@@ -220,19 +203,19 @@ En esta sección se entrenarán modelos de clasificación basados en **Random Fo
 
 -   **M:** matriz de expresión génica completa
 -   **M':** matriz de expresión génica filtrada
--   **C:** conjunto de covariables clínicas
+-   **C:** conjunto de variables confusoras
 -   **MC:** combinación de M con C.
 -   **M'C:** combinación de M' con C
--   **M + always.split.variables:** modelo de M forzando las variables clínicas en los splits
--   **M' + always.split.variables:** modelo de M' forzando las variables confundidoras en los splits.
+-   **M + always.split.variables:** modelo de M forzando las variables confusoras en los splits
+-   **M' + always.split.variables:** modelo de M' forzando las variables confusoras en los splits.
 
 El flujo de trabajo para cada modelo consistirá en:
 
-1.  Optimización de hiperparámetros mediante validación cruzada, empleando la métrica de **Accuracy**
-2.  Entrenamiento final mediante **bootstrapping (100 repeticiones)** con los hiperparámetros óptimos.
-3.  Cálculo de la media y el **intervalo de confianza del 95% de Accuracy**
+1.  Optimización de hiperparámetros mediante validación cruzada de 10 folds, empleando la métrica de **Accuracy**
+2.  Entrenamiento final mediante **bootstrapping (30 repeticiones)** con los hiperparámetros óptimos.
+3.  Cálculo la media y el **intervalo de confianza del 95% de Accuracy**
 4.  Obtención de la **importancia de variables**
-5.  Entrenamiento adicional forzando las variables confundidoras en los splits (`always.split.variables`) cuando corresponda.
+5.  Entrenamiento adicional forzando las variables confusoras en los splits (`always.split.variables`) cuando corresponda.
 
 ## Preparación de la variable objetivo
 
@@ -261,7 +244,7 @@ ggplot(df_cogdx, aes(x = Diagnostico, y = Frecuencia, fill = Diagnostico)) +
         axis.text.x = element_text(angle = 30, hjust = 1))  # Inclinado para legibilidad
 ```
 
-Se observa un claro desbalance entre las 5 clases a predecir. Siendo la categoría 4 (Enfermedad de Alzheimer sin otras causas adicionales) la más frecuente, seguido de la categoría 1 (Sin deterioro cognitivo). Este desbalance refuerza la necesidad de emplear métricas robustas como la **Balaced Accuracy** durante el proceso de validación y evaluación de los modelos. También implica que antes de entrenar los modelos y cuando hayamos generado los datos de train estos se van a tener que balancear de alguna manera.
+Se observa un claro desbalance entre las 5 clases a predecir. Siendo la categoría 4 (Enfermedad de Alzheimer sin otras causas adicionales) la más frecuente, seguido de la categoría 1 (Sin deterioro cognitivo). Este desbalance implica que antes de entrenar los modelos y cuando hayamos generado los datos de train estos se van a tener que balancear de alguna manera.
 
 ## Modelo RF con M
 
@@ -281,7 +264,7 @@ train_dataM <- df_M[train_ids,]
 test_dataM <- df_M[test_ids,]
 ```
 
-Ahora para que el entrenamiento del modelo se haga de manera óptima es necesario balancear los datos. Para este paso voy a usar `upSample` de `Caret`, esta función hace un muestreo aleatorio con reemplazo de la clase minoritaria hasta que tenga el mismo tamaño que la clase mayoritaria [@kuhn2008building].
+Ahora para que el entrenamiento del modelo se haga de manera óptima es necesario balancear los datos. Para este paso voy a usar `upSample` de `Caret`, esta función hace un muestreo aleatorio con reemplazo de la clase minoritaria hasta que tenga el mismo tamaño que la clase mayoritaria.
 
 ```{r}
 train_dataM$Alzheimer <- as.factor(train_dataM$Alzheimer)
@@ -301,7 +284,7 @@ ggplot(df_cogdx_bal, aes(x = Diagnostico, y = Frecuencia, fill = Diagnostico)) +
   theme(legend.position = "none")
 ```
 
-```{r}
+```{r, eval=FALSE}
 saveRDS(train_dataM, "train_dataM.rds")
 ```
 
@@ -336,7 +319,7 @@ modelo_cv_M <- train(
 ```
 
 ```{r}
-modelo_cv_M <- readRDS("ModeloM/modelo_cv_M.rds")
+modelo_cv_M <- readRDS("Scripts/ModeloM/modelo_cv_M.rds")
 ```
 
 En el código anterior optimizo los hiperparámetrtos usando un **Cross validation de 10**. Eligo la mejor combinación de hiperparámetros en base a la `Accuracy`.
@@ -348,7 +331,7 @@ mejores_hiperparametros <- modelo_cv_M$bestTune
 print(mejores_hiperparametros)
 ```
 
-Ahora entreno con **bootstrap = 30**. El **Boostraping** es una técnica de remuestreo utilizada para evaluar el rendimiento de los mmodelos predictivos. Se basa en la idea de crear múltiples subconjuntos de datos de entrenamiento seleccionando muestras **con reemplazo**, es decir, permitiendo que una misma observación aparezca varias veces en un mismo conjunto. Se utilizó **boostrapping** con 30 réplicas. [@kushary2000review].
+Ahora entreno con **bootstrap = 30**. El **Boostraping** es una técnica de remuestreo utilizada para evaluar el rendimiento de los mmodelos predictivos. Se basa en la idea de crear múltiples subconjuntos de datos de entrenamiento seleccionando muestras **con reemplazo**, es decir, permitiendo que una misma observación aparezca varias veces en un mismo conjunto. Se utilizó **boostrapping** con 30 réplicas.
 
 ```{r, eval=FALSE}
 control_boot <- trainControl(
@@ -370,7 +353,7 @@ modelo_bootM <- train(
 ### Resultados
 
 ```{r}
-modelo_bootM <- readRDS("ModeloM/modelo_bootM.rds")
+modelo_bootM <- readRDS("Scripts/ModeloM/modelo_bootM.rds")
 ```
 
 Extraigo el rendimiento final del modelo
@@ -383,12 +366,11 @@ ic <- quantile(resultado_boot$Accuracy, probs = c(0.025, 0.975))
 cat("Media Accuracy:", round(media, 3), "\n")
 cat("IC 95%:", round(ic[1], 3), '-', round(ic[2], 3), '\n')
 ```
-
-El modelo basado únicamente en expresión génica `M` mostró una **Accuracy** promedio del 83.8% tras 30 repeticiones de bootstrap, con un intervalo de confianza del 95% comprendido entre 78.3% y 88.3.6%. Este rendimiento elevado y estable respalda la capacidad discriminativa de los perfiles transcriptómicos para predecir el diagnóstico cognitivo en individuos del estudio **ROSMAP**. Sin embargo, será necesario evaluar si la incorporación de covariables clínicas y el uso de modelos combinados mejora este rendimiento y aporta valor clínico añadido.
+El modelo basado únicamente en expresión génica `M` mostró una **Accuracy** promedio del 83.8% tras 30 repeticiones de bootstrap, con un intervalo de confianza del 95% comprendido entre 78.3% y 88.3.6%. Este rendimiento elevado y estable respalda la capacidad discriminativa de los perfiles transcriptómicos para predecir el diagnóstico cognitivo en individuos del estudio **ROSMAP**. Sin embargo, será necesario evaluar si la incorporación de variables confusoras y el uso de modelos combinados mejora este rendimiento y aporta valor clínico añadido.
 
 ### Importancia Modelo M
 
-Ahora para evaluar que genes son realmente importantes y establacer un umbral de `VarImp` voy a entrenar el modelo M 15 veces, optimizando lso hiperparámetros por CV y evaluando por **Bootstrapping**. Luego de cada modelo voy a extraer los rankings de importancia de genes que se usarán para analizar su estabilidad y determinar que genes son reálemente informativos para el modelo, y cuáles actúen como ruido.
+Ahora para evaluar que genes son realmente importantes y establacer un umbral de `VarImp` voy a entrenar el modelo `M` 15 veces, optimizando los hiperparámetros por cross validation y evaluando por **Bootstrapping**. Luego de cada modelo voy a extraer los rankings de importancia de genes que se usarán para analizar su estabilidad y determinar que genes son reálemente informativos para el modelo, y cuáles actúen como ruido.
 
 ```{r,eval=FALSE}
 train_dataM <- readRDS("train_dataM.rds")
@@ -454,36 +436,56 @@ for (i in 1:15) {
 ```
 
 ```{r}
-varimp_listM <- readRDS("ModeloM/varimp_list_M_cvboot_15rep.rds")
+varimp_listM <- readRDS("Scripts/ModeloM/varimp_list_M_cvboot_15rep.rds")
 ```
 
 Ahora cargo la matriz de Rankings, donde cada fila representa un gen y cada columna es una de las 15 repeticiones del modelo M. El valor de cada celda es la **posición del gen en el ranking de importancia** en esa repetición. Con este ranking se puede observar **cuanto varía la posición de cada gen a lo largo de los experimentos**.
 
 ```{r}
-ranking_matrixM <- readRDS("ModeloM/ranking_matrix_M_cvboot_15rep.rds")
+ranking_matrixM <- readRDS("Scripts/ModeloM/ranking_matrix_M_cvboot_15rep.rds")
 ```
 
-Una vez cargada, calculo la **Correlación de Spearman** entre los rankings de cada par de repeticiones. Esto es fundamental para evaluar la consistencia del Ranking. Si los modelos son estables, se espera que las repeticiones estén altamente correlacionadas entre sí.
+Una vez cargada, calculo la **Correlación de Pearson** entre los rankings de cada par de repeticiones. Esto es fundamental para evaluar la consistencia del Ranking. Si los modelos son estables, se espera que las repeticiones estén altamente correlacionadas entre sí.
 
 ```{r}
 cor_matrix <- cor(ranking_matrixM, method = "spearman")
 summary(as.vector(cor_matrix[lower.tri(cor_matrix)]))
 ```
-
-La matriz de correlación de `Spearman` entre los rankings de importancia en las 15 repeticiones del modelo M mostró valores bajos pero positivos. Esto sugiere que existe cierta señal común entre las repeticiones, pero también una variabilidad considerable. Por tanto, no es fiable extraer conclusiones sobre genes importantes a partir de una única ejecución del modelo.
+La matriz de correlación de `Pearson` entre los rankings de importancia en las 15 repeticiones del modelo M mostró valores bajos pero positivos. Esto sugiere que existe cierta señal común entre las repeticiones, pero también una variabilidad considerable. Por tanto, no es fiable extraer conclusiones sobre genes importantes a partir de una única ejecución del modelo.
 
 A continuación, calculo la **varianza de la posición en el ranking** de cada gen a lo largo de las 15 repeticiones. Esta métrica nos indica **la estabilidad del gen**. Si el gen es **realmente informativo**, su posición sera estable, apareciendo de forma consistente entre los primeros lugares. Por el contrario, si el gen no aporta información, su posición variará de forma aleatoria entre repeticiones, generando una varianza alta
 
 Además, calculo el **promedio de posición** para cada gen. Esto proporciona una estimación de su **importancia media**, independientemente de su estabilidad
 
 ```{r}
-gene_variancesM <- apply(ranking_matrixM, 1, var)
+gene_variancesM <- apply(ranking_matrixM, 1, stats::var)
 gene_mean_rankM <- apply(ranking_matrixM, 1, mean)
 ```
 
-Ahora genero un gráfico para representar para cada gen su **posición promedio** (`MeanRank`) en el ranking en el eje X y su **varianza del ranking** (`RankVariance`) entre repeticiones en el eje Y. Los genes **importantes y estables** estarán *abajo a la izquierda* (Ranking bajo y varianza baja). Mientras que los genes **poco importantes**, estarán dispersos en la parte derecha alta.
+Ahora obtengo los 300 genes más estables, es decir, con menor varianza.
 
 ```{r}
+genes_300_mas_estables <- names(sort(gene_variancesM))[1:300]
+```
+
+Filtro la matriz de Rankings solo para esos genes.
+
+```{r}
+ranking_matrix_300 <- ranking_matrixM[genes_300_mas_estables, ]
+```
+
+Y por último calculo la correlación de **Pearson** entre repeticiciones de estos 300 genes.
+
+```{r}
+cor_matrix_300 <- cor(ranking_matrix_300, method = "spearman")
+cor_vals_300 <- cor_matrix_300[lower.tri(cor_matrix_300)]
+summary(cor_vals_300)
+```
+Los valores de correlación de estos 300 genes más estables indican valores mucho mayores, lo que indica que entre estos genes la variabilidad entre repeticiones no es tan alta como con la matriz de genes completa.
+
+Ahora genero un gráfico para representar para cada gen su posición promedio (`MeanRank`) en el ranking en el eje X y su varianza del ranking (`RankVariance`) entre repeticiones en el eje Y. Los genes importantes y estables estarán abajo a la izquierda (Ranking bajo y varianza baja). Mientras que los genes poco importantes, estarán dispersos en la parte derecha alta.
+
+```{r, warning=FALSE}
 df_stability <- data.frame(
   Gene = rownames(ranking_matrixM),
   MeanRank = gene_mean_rankM,
@@ -496,7 +498,7 @@ ggplot(df_stability, aes(x = MeanRank, y = RankVariance)) +
   geom_point(alpha = 0.6, color = "steelblue") +
   geom_smooth(method = "loess", se = FALSE, color = "darkred", linewidth = 1) +
   labs(
-    title = "Estabilidad de los genes en el modelo M",
+    title = "Estabilidad de los genes en el modelo M (Experimento ROSMAP)",
     subtitle = "Ranking promedio vs varianza del ranking (15 repeticiones)",
     x = "Ranking promedio (1 = más importante)",
     y = "Varianza del ranking entre repeticiones"
@@ -504,34 +506,95 @@ ggplot(df_stability, aes(x = MeanRank, y = RankVariance)) +
   theme_minimal()
 ```
 
-El gráfico anterior muestra la estabilidad de los genes en el modelo M. Los genes **consistentemente importantes** (1-1000) tienden a tener baja varianza si son realmente informativos. Los genes **irrelevantes** (rankink promedio alto, \>7000) tambień suelen tener baja varianza, porque siempre salen al final. Los genes con **importancia inestables** (4000-7000), tienden a tener **alta varianza**, porque en algunas repeticiones aparecen como importantes y en otras no.
-
-Ahora voy a extraer los 20 **genes más estables** (baja varianza), y **más importantes** (ranking promedio más bajo).
+Ahora genero un gráfico para ver la distribución de varianzas de Ranking del Modelo M entre repeticiones.
 
 ```{r}
-ranking_esabilidad_ordenado <- df_stability[order(df_stability$RankVariance, df_stability$MeanRank), ]
-top20_estables <- head(ranking_esabilidad_ordenado, 20)
+distribucion_varianzas <- ggplot(df_stability, aes(x = RankVariance)) +
+  geom_histogram(
+    bins = 100,
+    fill = "slateblue",
+    color = "white",
+    alpha = 0.8  
+  ) +
+  labs(
+    title = "Distribución de varianzas de ranking (modelo M)",
+    x = "Varianza del ranking",
+    y = "Frecuencia"
+  ) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05))) + 
+  theme_minimal() 
+distribucion_varianzas
+```
+Se observa que la mayoría de los genes tienen varianzas altas, lo que sugiere una alta estabilidad en sus rankings. Sin embargo también hay un grupo de genes (algo más de 100) que se agrupan en torno a valores muy bajos de varianzas.
+
+Ahora voy a extraer los 20 **genes más estables** (baja varianza)
+
+```{r}
+ranking_estabilidad_ordenado <- df_stability %>% 
+  arrange(RankVariance, MeanRank)
+
+top20_estables <- ranking_estabilidad_ordenado %>% 
+  slice_head(n = 20)
 
 ggplot(top20_estables, aes(x = reorder(Gene, -MeanRank), y = MeanRank)) +
   geom_bar(stat = "identity", fill = "steelblue") +
   coord_flip() +
   labs(
-    title = "Top 20 genes más estables y con mejor ranking",
+    title = "20 genes más estables para M (ROSMAP)",
     x = "Gen",
     y = "Ranking promedio"
   ) +
   theme_minimal()
 ```
 
-El gráfico muestra los 20 genes más estables y con mejor ranking promedio, lo que indica que son consistentemente relevantes para la clasificación de los estados cognitivos. Genes como `MTCP1`, `MYO1E`, `HPCAL1` y `TRIM5` se posicionaron de forma recurrente entre los primeros lugares, lo que sugiere que podrían actuar como biomarcadores robustos en el contexto de los datos transcriptómicos analizados.
+El gráfico muestra los 20 genes más estables , lo que indica que son consistentemente relevantes para la clasificación de los estados cognitivos. Genes como `MTCP1`, `MYO1E`, `HPCAL1` y `TRIM5` se posicionaron de forma recurrente entre los primeros lugares, lo que sugiere que podrían actuar como biomarcadores robustos en el contexto de los datos transcriptómicos analizados.
 
--   **MTCP1** codifica una proteína implicada en la proliferación de células T maduras llamada `SPTAN1`.y se sabe que mutaciones en esta proteína son las causantes de la encefalopatía epiléptica infantil temprana-5 [@writzl2012early].
+-   **MTCP1** codifica una proteína implicada en la proliferación de células T maduras llamada `SPTAN1`.y se sabe que mutaciones en esta proteína son las causantes de la encefalopatía epiléptica infantil temprana-5.
 
--   **MYO1E** gen que codifica una *miosina de clase I no muscular* que participa en la remodelación de la membrana celular durante procesos como la endocitosis y la exocitosis, facilitando la migración e invasión celular. Mutaciones en **MYO1E** se han asociado con enfermedades renales como la glomeruloesclerosis segmentaria focal, y su sobreexpresión se ha relacionado con un pronóstico desfavorable en varioas tipos de cáncer, como el de pulmon [@jusuetorres2023myo1e].
+-   **MYO1E** gen que codifica una *miosina de clase I no muscular* que participa en la remodelación de la membrana celular durante procesos como la endocitosis y la exocitosis, facilitando la migración e invasión celular. Mutaciones en **MYO1E** se han asociado con enfermedades renales como la glomeruloesclerosis segmentaria focal, y su sobreexpresión se ha relacionado con un pronóstico desfavorable en varioas tipos de cáncer, como el de pulmon.
 
 -   **HPCAL1** también llamada **proteína similar a hippocalcina 1** es una proteína sensora de calcio neuronal que se encuentra en el cerebro y en la retina. Se cree que puede estar involucrada en la **señalización neuronal en el sistema nervioso central** [@tam2015characterization].
 
--   **TRIM5** es una proteína que actúa como facotr de restricción antiviral, bloqueando la replicación de retrovirus en etapas tempranas del cliclo de vida viral. Además de su papel antiviral, **TRIM5** participa en la activicación de respuestas inmunitarias innatas [@zabetian2015retinol].
+-   **TRIM5** es una proteína que actúa como facotr de restricción antiviral, bloqueando la replicación de retrovirus en etapas tempranas del cliclo de vida viral. Además de su papel antiviral, **TRIM5** participa en la activicación de respuestas inmunitarias innatas.
+
+Ahora voy a generar otro gráfico pero que muestre los genes del modelo M con un `RankVariance < 200` (genes con varianza extremadamente baja) y un `MeanRank` < 20 (genes con ranking promedio bajo, y por tanto mejor posicionados).
+
+```{r}
+top_genes <- df_stability %>%
+  filter(MeanRank < 20, RankVariance < 220) %>%
+  slice_min(RankVariance, n = 15)
+
+ fig_zoom <- ggplot(
+  df_stability %>% filter(MeanRank < 20, RankVariance < 200),
+  aes(x = MeanRank, y = RankVariance)
+) +
+  geom_point(
+    color = "coral",
+    size = 3,       
+    alpha = 0.7
+  ) +
+  geom_text_repel(   
+    data = top_genes,
+    aes(label = Gene),
+    size = 3.5,
+    box.padding = 0.5,
+    max.overlaps = Inf  
+  ) +
+  labs(
+    title = "Zoom: genes con varianza < 200 y ranking < 20 (Modelo M)" ,
+    x = "Ranking promedio",
+    y = "Varianza del ranking"
+  ) +
+  theme_minimal()
+ fig_zoom
+```
+
+```{r, eval=FALSE}
+figura_combinada <- distribucion_varianzas + fig_zoom + plot_layout(ncol = 2)
+ggsave("figura_varianzas_rankings.png", figura_combinada, width = 14, height = 6, dpi = 300)
+```
+
+Como se observa, solo aparecen dos genes, que también estaban en el gráfico anterior. El gen `MTCP1` es el gen con mejor varianza y menor ranking promedio, seguido por el gen `HPCAL`.
 
 ## Modelo RF con M'
 
@@ -565,7 +628,7 @@ ggplot(df_cogdx_bal, aes(x = Diagnostico, y = Frecuencia, fill = Diagnostico)) +
 
 Como se observa en la tabla, el balanceo se ha realizado de manera óptima, por lo que se puede pasar a entrenar al modelo.
 
-```{r}
+```{r, eval=FALSE}
 saveRDS(train_dataMprima, "train_dataMprima.rds")
 ```
 
@@ -595,7 +658,7 @@ modelo_cv_Mprima <- train(
 ```
 
 ```{r}
-modelo_cv_Mprima <- readRDS("Modelo M'/modelo_cv_Mprima.rds")
+modelo_cv_Mprima <- readRDS("Scripts/Modelo M'/modelo_cv_Mprima.rds")
 ```
 
 Extraigo la mejor combinación de hiperparámetros
@@ -627,7 +690,7 @@ modelo_bootMprima <- train(
 ### Resultados
 
 ```{r}
-modelo_bootMprima <- readRDS("Modelo M'/modelo_bootMprima.rds")
+modelo_bootMprima <- readRDS("Scripts/Modelo M'/modelo_bootMprima.rds")
 ```
 
 Extraigo el rendimiento final del modelo
@@ -641,9 +704,7 @@ cat("Media Accuracy:", round(media, 3), "\n")
 cat("IC 95%:", round(ic[1], 3), '-', round(ic[2], 3), '\n')
 ```
 
-El modelo entrenado sobre la matriz de expresión génica filtrada (M') mostró una **Accuracy** promedio del 83.9%, con un intervalo de confianza del 95% entre 78.8% y 88.5%. Este resultado es ligeramente superior al obtenido con la matriz completa `M`, indicando que el proceso de filtrado por baja varianza y alta correlación no solo no perjudicó el rendimiento del modelo, sino que contribuyó a aumentar su eficiencia.
-
-Este resultado refuerza la importancia de aplicar técnicas de selección de variables en datasets de expresión génica de alta dimensión, facilitando modelos más robustos y potencialmente más interpretables.
+El modelo entrenado sobre la matriz de expresión génica filtrada (M') mostró una **Accuracy** promedio del 83.9%, con un intervalo de confianza del 95% entre 78.8% y 88.5%. Este resultado es ligeramente superior al obtenido con la matriz completa `M`, indicando que el proceso de filtrado por baja varianza y alta correlación no solo no perjudicó el rendimiento del modelo, sino que contribuyó a aumentar su eficiencia. Este resultado refuerza la importancia de aplicar técnicas de selección de variables en datasets de expresión génica de alta dimensión, facilitando modelos más robustos y potencialmente más interpretables.
 
 Creo el gráfico de importancia
 
@@ -669,7 +730,7 @@ Estos resultados, subrayan que la aplicación de técnicas de selección de cara
 
 -   **SH3TC1** es una proteína que contiene dominios SH3 y repeticiones tetratricopeptídicas (TPR), estructuras conocidas por mediar interacciones proteína-proteína. Según el **Human Protein Atlas**, muestra una expresión elevada en el timo y en células inmunitarias como monocitos y células dendríticas plasmacitoides, lo que sugiere un papel en la respuesta inmune adaptativa.
 
--   **RBP4** es la principal proteína transportadora de retinol en el plasma, facilitando su movilización desde el hígado hacia los téjidos periféricos. Niveles elevados de **RBP4** se han asociado con resistencia a la insulina, obesidad y diabetes tipo 2 [@nankam2021retinol].
+-   **RBP4** es la principal proteína transportadora de retinol en el plasma, facilitando su movilización desde el hígado hacia los téjidos periféricos. Niveles elevados de **RBP4** se han asociado con resistencia a la insulina, obesidad y diabetes tipo 2.
 
 ## Modelo RF con MC
 
@@ -700,10 +761,9 @@ ggplot(df_cogdx_bal, aes(x = Diagnostico, y = Frecuencia, fill = Diagnostico)) +
   theme_minimal() +
   theme(legend.position = "none")
 ```
-
 Como se observa, cada una de las clases tiene 128 observaciones, por lo que el balanceo se ha realizado de manera correcta. Pasamos al entrenamiento del modelo.
 
-```{r}
+```{r,eval=FALSE}
 saveRDS(train_dataMC, "train_dataMC.rds")
 ```
 
@@ -732,8 +792,9 @@ modelo_cv_MC <- train(
 )
 ```
 
+
 ```{r}
-modelo_cv_MC <- readRDS("Modelo MC/modelo_cv_MC.rds")
+modelo_cv_MC <- readRDS("Scripts/Modelo MC/modelo_cv_MC.rds")
 ```
 
 Extraigo la mejor combinación de hiperparámetros
@@ -765,7 +826,7 @@ modelo_bootMC <- train(
 ### Resultados
 
 ```{r}
-modelo_bootMC <- readRDS("Modelo MC/modelo_bootMC.rds")
+modelo_bootMC <- readRDS("Scripts/Modelo MC/modelo_bootMC.rds")
 ```
 
 Extraigo el rendimiento final del modelo
@@ -779,7 +840,7 @@ cat("Media Accuracy:", round(media, 3), "\n")
 cat("IC 95%:", round(ic[1], 3), '-', round(ic[2], 3), '\n')
 ```
 
-El modelo combinado `MC`, que integra expresión génica con covariables clínicas, alcanzó una **Accuracy** media de 92.3%, con un intervalo de confianza ente 88.3% y 96.6%. Estos resultados representan una mejora significativa frente a los modelos basados únicamente en expresión génica (M y M'), confirmando que la incorporación de información clínica relevante potencia considerablemente la capacidad discriminativa del modelo. Asimismo, el intervalo de confianza más esterecho y elevado refuerza la estabilidad y robustez del modelo `MC`, posicionándolo por ahora como la mejor estrategia predictiva en el presente estudio. Estos resultados apoyan la utilidad de enfoques multiómicos y clínicos integrados en el diagnóstico de la enfermedad del Alzheimer y otras demencias.
+El modelo combinado `MC`, que integra expresión génica con variables confusoras, alcanzó una **Accuracy** media de 92.3%, con un intervalo de confianza ente 88.3% y 96.6%. Estos resultados representan una mejora significativa frente a los modelos basados únicamente en expresión génica (M y M'), confirmando que la incorporación de información confusora relevante potencia considerablemente la capacidad discriminativa del modelo. Asimismo, el intervalo de confianza más esterecho y elevado refuerza la estabilidad y robustez del modelo `MC`, posicionándolo por ahora como la mejor estrategia predictiva en el presente estudio. Estos resultados apoyan la utilidad de enfoques multiómicos y clínicos integrados en el diagnóstico de la enfermedad del Alzheimer y otras demencias.
 
 Creo el gráfico de importancia
 
@@ -799,7 +860,7 @@ ggplot(top_vars, aes(x = reorder(Variable, Overall), y = Overall)) +
   theme_minimal()
 ```
 
-El análisis de importancia de variables en el modelo `MC` muestra que la **escala neuropatológica CERAD (ceradsc)** es, con mucha diferencia la vairable clínica más relevante, seguida por los estadios de Braak `braaksc5` y `braaksc3`, esto confirma que las variables clínicas aportan una parte muy importante a la capacidad predictiva del modelo. Sin embargo, varios genes como **MTCP1, TSSC4, MYO1E, RBP4 y TRIM5** mantuvieron una contribución significativa, destacando el valor añadido que aporta la expresión génica al modelo. La presencia consistente de genes como **MTCP1 y TRIM5** en los modelos `M`, `M'` y `MC`, sugiere su relevancia robusta como biomarcadores potenciales.
+El análisis de importancia de variables en el modelo `MC` muestra que la **escala neuropatológica CERAD (ceradsc)** es, con mucha diferencia la vairable clínica más relevante, seguida por los estadios de Braak `braaksc5` y `braaksc3`, esto confirma que las variables neuropatológicas aportan una parte muy importante a la capacidad predictiva del modelo. Sin embargo, varios genes como **MTCP1, TSSC4, MYO1E, RBP4 y TRIM5** mantuvieron una contribución significativa, destacando el valor añadido que aporta la expresión génica al modelo. La presencia consistente de genes como **MTCP1 y TRIM5** en los modelos `M`, `M'` y `MC`, sugiere su relevancia robusta como biomarcadores potenciales.
 
 Este patrón de importancia mixto, refleja la sinergia entre los datos transcriptómicos y clínicos, reforzando la utilidad de enfoques integrados en la clasificación y diagnósitico de la enfermedad de Alzheimer.
 
@@ -847,7 +908,7 @@ ggplot(df_cogdx_bal, aes(x = Diagnostico, y = Frecuencia, fill = Diagnostico)) +
 
 El balanceo se ha realizado de manera correcta.
 
-```{r}
+```{r,eval=FALSE}
 saveRDS(train_dataMprimaC, "train_dataMprimaC.rds")
 ```
 
@@ -876,8 +937,9 @@ modelo_cv_MprimaC <- train(
 )
 ```
 
+
 ```{r}
-modelo_cv_MprimaC <- readRDS("ModeloMprimaC/modelo_cv_MprimaC.rds")
+modelo_cv_MprimaC <- readRDS("Scripts/ModeloMprimaC/modelo_cv_MprimaC.rds")
 ```
 
 Extraigo la mejor combinación de hiperparámetros
@@ -909,7 +971,7 @@ modelo_bootMprimaC <- train(
 ### Resultados
 
 ```{r}
-modelo_bootMprimaC <- readRDS("ModeloMprimaC/modelo_bootMprimaC.rds")
+modelo_bootMprimaC <- readRDS("Scripts/ModeloMprimaC/modelo_bootMprimaC.rds")
 ```
 
 Extraigo el rendimiento final del modelo
@@ -925,7 +987,7 @@ cat("IC 95%:", round(ic[1], 3), '-', round(ic[2], 3), '\n')
 
 El modelo combinado `M'C`que integra la matriz de expresión génica filtrada junto con las variables clínicas obtiene como resultado una media de **Accuracy** del 92.1%, con un intervalo de confianza entre el 88.4% y el 95.5%. Estos resultados no solo representan el rendimiento más alto observado hasta ahora, sino que además confirman la utilidad de la selección de características para reducir la dimensionalidad de los datos sin perder información relevante.
 
-La integracción de datos transcriptómicos filtrados junto con a las variables clínicas robustas ofrece un modelo predictivo más eficiente, robusto y potencialmente más aplicable en contextos clínicos. Estos hallazgos refuerzan la importancia de la depuración de los datos en casos donde la complejidad de los datos es elevada.
+La integracción de datos transcriptómicos filtrados junto con las variables confusoras robustas ofrece un modelo predictivo más eficiente, robusto y potencialmente más aplicable en contextos clínicos. Estos hallazgos refuerzan la importancia de la depuración de los datos en casos donde la complejidad de los datos es elevada.
 
 Creo el gráfico de importancia
 
@@ -945,19 +1007,17 @@ ggplot(top_vars, aes(x = reorder(Variable, Overall), y = Overall)) +
   theme_minimal()
 ```
 
-En el modelo `M'C`, la escala CERAD mantuvo su posición dominante como principal variable predictiva, reflejando su alta capacidad discriminativa en el diagnóstico de la enfermedad. No obstante, varios genes como **MTCP1, HPCAL1, P3H1, TSSC4 y MYO1E** se situaron justo después, aportando valor añadido al modelo, lo que evidencia que, incluso en presencia de variables clínicas robustas, la expresión génica filtrada en este caso, contribuye mucho a las labores de clasificación.
-
-Además, la presencia de otras variables como **braaksc5 y braaksc3** reaafirma la utilidad de integrar diferentes niveles de información clínica y molecular.
+En el modelo `M'C`, la escala CERAD mantuvo su posición dominante como principal variable predictiva, reflejando su alta capacidad discriminativa en el diagnóstico de la enfermedad. No obstante, varios genes como **MTCP1, HPCAL1, P3H1, TSSC4 y MYO1E** se situaron justo después, aportando valor añadido al modelo, lo que evidencia que, incluso en presencia de variables clínicas robustas, la expresión génica filtrada en este caso, contribuye mucho a las labores de clasificación. Además, la presencia de otras variables como **braaksc5 y braaksc3** reaafirma la utilidad de integrar diferentes niveles de información clínica y molecular.
 
 Los resultados son prácticamente ideńticos al del modelo `MC`, lo único que cambia es la escala de los valores de importancia. En el caso del modelo `M'C`, el valor de importancia de **CERAD** es más alto que el valor de **CERAD** de `MC`. Este aumento de la importancia puede deberse a la eliminación de las variables y a que estas enmascaraban cierta señal predictiva al no aportar nada al modelo. Por lo tanto siempre que se pueda es interesante hacer un filtrado de los datos para mejorar la capacidad predictiva del modelo y la interpretabilidad.
 
 ## Modelo RF con M + `always.split.variables`
 
-En modelos de Machine Learning aplicados a datos ómicos, la presencia de variables clínicas conocidas por su fuerte asociación con el fenotipo de interés, como las escalas neuropatológicas **ceradsc o braaksc** o covariables como **sex, pmi y rin** pueden actuar como variables **confusoras**. Estas variables, al estar altamente correlacionadas con la clase, pueden dominar el modelo e impedir que se valore adecuadamente la capacidad discriminativa de los genes en este caso.
+En modelos de Machine Learning aplicados a datos ómicos, la presencia de variables clínicas y técnicas conocidas por su fuerte asociación con el fenotipo de interés, como las escalas neuropatológicas **ceradsc o braaksc** o covariables como **sex, pmi y rin** pueden actuar como variables **confusoras**. Estas variables, al estar altamente correlacionadas con la clase, pueden dominar el modelo e impedir que se valore adecuadamente la capacidad discriminativa de los genes en este caso.
 
 Una estrategia para abordar este problema es el uso del parámetro `always.split.variables`, disponible en `ranger`. Este parámetro permite **forzar al modelo a considerar ciertas variables en lo splits del modelo**, asegurando que las variables confusoras sean tenidas en cuenta en la construcción de los árboles. De esta manera se busca:
 
--   Evaluar la capacidad predictiva del conjunto de genes una vez controlado explícitamente por las variables clínicas.
+-   Evaluar la capacidad predictiva del conjunto de genes una vez controlado explícitamente por las variables confusoras.
 -   Obtener modelos más interpretables y robustos
 
 Lo primero, como siempre, es generar los datos de train y test
@@ -1039,7 +1099,7 @@ ggplot(df_balanceo_summary, aes(x = Alzheimer, y = Frecuencia, fill = Alzheimer)
 
 Como se observa en el gráfico anterior, se ha balanceado la variable objetivo `Alzheimer` para cada una de las variables clínicas. Por lo que ya tenemos los datos listos para el entrenamiento usando el parámetro `always.split.variables`
 
-```{r}
+```{r,eval=FALSE}
 saveRDS(MvarC_split_bal, "MvarC_split_bal.rds")
 ```
 
@@ -1082,10 +1142,10 @@ for (var_c in names(MvarC_split_bal)) {
 ```
 
 ```{r}
-modelo_cv_Msplit <- readRDS("Msplit/modelo_cv_splitM.rds")
+modelo_cv_Msplit <- readRDS("Scripts/Msplit/modelo_cv_splitM.rds")
 ```
 
-Imprimo los mejores hiperparámetros para cada una de las variables clínicas. Estos hiperparámetros se utilizarán individualmente en cada variable clínica del modelo entrenado con **Boostrapping = 100**
+Imprimo los mejores hiperparámetros para cada una de las variables clínicas. Estos hiperparámetros se utilizarán individualmente en cada variable clínica del modelo entrenado con **Boostrapping = 30**
 
 ```{r}
 resumen_modelos_split <- lapply(names(modelo_cv_Msplit), function(var_name) {
@@ -1140,7 +1200,7 @@ for (var_c in names(modelo_splitM)) {
 ```
 
 ```{r}
-boot_splitM <- readRDS("Msplit/modelo_boot_splitM.rds")
+boot_splitM <- readRDS("Scripts/Msplit/modelo_boot_splitM.rds")
 ```
 
 ```{r}
@@ -1161,9 +1221,9 @@ for (var_a in names(boot_splitM)) {
 }
 ```
 
-El entrenamiento con **bootstrapping** confirmó la superioridad de las variables neuropatológicas `braaksc` y `ceradsc` como principales cofounders en la clasificación de Alzheimer, alcanzando unos resultados de **Accuracy** de 95% y 95.9% respectivamente, con unos intervalos de confianzas tamvién estrehos y muy elevados.Por su parte las variables técnicas como `rin`, `batch` o `pmi`, y demográficas como `msex`, mostraron un impacto moderado pero consistente, con unos resultados de **Accuracy** en torno al 86-89%.
+El entrenamiento con **bootstrapping** confirmó la superioridad de las variables neuropatológicas `braaksc` y `ceradsc` como principales variables confusoras en la clasificación de Alzheimer, alcanzando unos resultados de **Accuracy** de 95% y 95.9% respectivamente, con unos intervalos de confianzas también estrehos y muy elevados.Por su parte las variables técnicas como `rin`, `batch` o `pmi`, y demográficas como `msex`, mostraron un impacto moderado pero consistente, con unos resultados de **Accuracy** en torno al 86-89%.
 
-Estos resultados confirman que forzar al modelo utilizar variables muy informativas es muy útil ya que permite lograr unos resultados prácticamente idénticos al del modelo completo, reduciendo la complejidad computacional y haciendo los resultados mucho más interpretables. Esto es útil sobre todo en el ámbito médico, donde prácticamente siempre se conocen variables clínicas muy importantes a la hora de predeccir y clasificar una determinada enfermedad, en este caso el Alzheimer.
+Estos resultados confirman que forzar al modelo utilizar variables muy informativas es muy útil ya que permite lograr unos resultados prácticamente idénticos al del modelo completo, reduciendo la complejidad computacional y haciendo los resultados mucho más interpretables. Esto es útil sobre todo en el ámbito médico, donde prácticamente siempre se conocen variables muy importantes a la hora de predeccir y clasificar una determinada enfermedad, en este caso el Alzheimer.
 
 Ahora genero el gráfico de importancias.
 
@@ -1192,15 +1252,15 @@ for (var_a in variables_forzadas) {
 }
 ```
 
-El gráfico de importancia de variables muestra que, al controlar individualmente las variables clínicas con el parámetro `always.split.variables`, factores como `braaksc` y `ceradsc` monopolizan la importancia del modelo cuando son forzadas, minimizando el peso de las variables transciptómicas, esto refleja su gran capacidad predictiva y como el modelo prácticamente solo se fija en ellas para predecir.
+El gráfico de importancia de variables muestra que, al controlar individualmente las variables confusoras con el parámetro `always.split.variables`, factores como `braaksc` y `ceradsc` monopolizan la importancia del modelo cuando son forzadas, minimizando el peso de las variables transciptómicas, esto refleja su gran capacidad predictiva y como el modelo prácticamente solo se fija en ellas para predecir.
 
 En contraste, las demás variables, `rin`, `pmi` y `msex` permiten que los genes mantengan su relevancia en la clasificación. En el caso de `msex`, su importancia es tan baja que no aparece incluso entre las 20 variables más importantes, `pmi` si que tiene algo más de importancia apareciendo octavo de las 20 variables, mientras que `rin` si que aparece como la variable más importante, pero a diferencia de `braaksc` y `ceradsc` no monopoliza el modelo, sino que las variables transcriptómicas tienen pŕacticamente la misma importancia.
 
-Estos resultados reflejan la diferente magnitud del impacto de cada variable clínica y justifica la necesidad de un control adecuado en modelos transcriptómicos.
+Estos resultados reflejan la diferente magnitud del impacto de cada variable confusora y justifica la necesidad de un control adecuado en modelos transcriptómicos.
 
 ## Modelo RF con `M'` + `always.split.variables`.
 
-En este experimento voy a seguir el mismo enfoque que en el anterior, voy a pasar las 6 variables clínicas al entrenamiento de los modelos gracias al parámertro `always.split.variables`, pero en este caso el entrenamiento se hace sobre el los datos transcriptómicos filtrados `M'`. El objetivo es observar si el filtrado de los genes correlacionados permite que el modelo se centre más en la variables clínicas importantes para predecir la enfermedad y por tanto mejoren los resultados.
+En este experimento voy a seguir el mismo enfoque que en el anterior, voy a pasar las 6 variables clínicas al entrenamiento de los modelos gracias al parámertro `always.split.variables`, pero en este caso el entrenamiento se hace sobre el los datos transcriptómicos filtrados `M'`. El objetivo es observar si el filtrado de los genes correlacionados permite que el modelo se centre más en la variables confusoras importantes para predecir la enfermedad y por tanto los resultados mejoren.
 
 Lo primero es generar los datos de train y test
 
@@ -1282,7 +1342,7 @@ ggplot(df_balanceo_summary, aes(x = Alzheimer, y = Frecuencia, fill = Alzheimer)
 
 Como se observa, el balanceo se ha realizado de manera correcta, podemos pasar al entrenamiento de los modelos para cada una de las variables.
 
-```{r}
+```{r,eval=FALSE}
 saveRDS(MprimavarC_split_bal, "MprimavarC_split_bal.rds")
 ```
 
@@ -1325,7 +1385,7 @@ for (var_c in names(MprimavarC_split_bal)) {
 ```
 
 ```{r}
-modelo_cv_Mprimasplit <- readRDS("Mprimasplit/modelo_cv_splitMprima.rds")
+modelo_cv_Mprimasplit <- readRDS("Scripts/Mprimasplit/modelo_cv_splitMprima.rds")
 ```
 
 Imprimo los mejores hiperparámetros para cada una de las variables clínicas.
@@ -1383,7 +1443,7 @@ for (var_c in names(modelo_splitMprima)) {
 ```
 
 ```{r}
-boot_splitMprima <- readRDS("Mprimasplit/modelo_boot_splitMprima.rds")
+boot_splitMprima <- readRDS("Scripts/Mprimasplit/modelo_boot_splitMprima.rds")
 ```
 
 ```{r}
@@ -1406,7 +1466,7 @@ for (var_b in names(boot_splitMprima)) {
 
 Los modelos entrenados sobre la matriz de expresión filtrada (`M'`) y el parámetro `always.split.variables` muestran un rendimiento muy similar al experimento anterior con la matrix completa `M`. Esto indica que el proceso de filtrado aplicado ha permitido reducir la dimensionalidad del espacio de predictores y por tanto reducir también la carga computacional sin sacrificar capacidad discriminativa.
 
-La consistencia de los resultados de las variables clínicas confirma la robustez del enfoque, destacando de nuevo a las variables `braaksc` y `ceradsc` como prinicpales factores explicativos en la clasificación de la variable objetivo `Alzheimer`.
+La consistencia de los resultados de las variables confusoras confirma la robustez del enfoque, destacando de nuevo a las variables `braaksc` y `ceradsc` como prinicpales factores explicativos en la clasificación de la variable objetivo `Alzheimer`.
 
 ```{r}
 top_importancias <- lapply(names(boot_splitMprima), function(var_b) {
@@ -1435,13 +1495,13 @@ for (var in variables_forzadas) {
 
 El análisis de importancia de variables muestra que al igual que pasaba en el experimento anterior los factores neuropatológicos `braaksc` y `ceradsc` dominan claramente los modelos donde son forzadas reemplazando totalmente a los datos transcriptómicos, que prácticamente no aportan nada de información.
 
-Por otra parte, las variables `rin`, `pmi` y `msex` no aparecen entre las 20 variables más importantes del modelo, incluso habiendo forzado al modelo a incluirlas. Esto confirma que su poder predictivo es mucho menor que `ceradsc`,`braaksc` y el conjunto de datos transcriptómicos. Algo a tener en cuenta respecto al modelo anterior esque las variables `rin` y `pmi` si que aparecían entre las más importantes, siendo `rin` incluso la más importante en su modelo. Que en este experimento no aparezcan se debe a que al quitar datos que no aportan nada, se desenmascara información de genes que antes por el efecto del ruido no aparecían, desplazando en importancia a las variables clínicas.
+Por otra parte, las variables `rin`, `pmi` y `msex` no aparecen entre las 20 variables más importantes del modelo, incluso habiendo forzado al modelo a incluirlas. Esto confirma que su poder predictivo es mucho menor que `ceradsc`,`braaksc` y el conjunto de datos transcriptómicos. Algo a tener en cuenta respecto al modelo anterior esque las variables `rin` y `pmi` si que aparecían entre las más importantes, siendo `rin` incluso la más importante en su modelo. Que en este experimento no aparezcan se debe a que al quitar datos que no aportan nada, se desenmascara información de genes que antes por el efecto del ruido no aparecían, desplazando en importancia a las variables confusoras.
 
 Por lo tanto, se comprueba que el quitar datos en este caso repetidos o con mucha correlación entre sí ayuda al modelo a manejar mejor la información de los demas variables transcriptómicas, si a esto le sumamos lo que aporta forzar los modelos con una variable muy informativa como puede ser `braaksc` o `ceradsc`, nos da un modelo con unos resultados excelentes y una mayor interpretabilidad y menor complejidad.
 
 ## Modelo RF con `C`
 
-En este experimento se va a entrenar un modelo, pero solo con la variables clínicas. El objetivo es ver si la información de estas variables es tan alta que se pueda construir un modelo predictivo fiables solo basándose en ellas, o si por el contrario se necesitan los datos transcriptómicos más estas variables.
+En este experimento se va a entrenar un modelo, pero solo con la variables confusoras. El objetivo es ver si la información de estas variables es tan alta que se pueda construir un modelo predictivo fiables solo basándose en ellas, o si por el contrario se necesitan los datos transcriptómicos también.
 
 Como en todos los modelos anteriores, lo primero es generar los datos de train y test
 
@@ -1534,8 +1594,7 @@ ic_C <- quantile(resultado_bootC$Accuracy, probs = c(0.025, 0.975))
 cat("Accuracy C:", round(media_C, 3), "\n")
 cat("IC 95%:", round(ic_C[1], 3), "-", round(ic_C[2], 3), "\n")
 ```
-
-El modelo basado exclusivamente en variables clínicas alcanzó una **Accuracy** del 91.3%, con un IC95% de entre 87.5%-94.5%, confirmando la elevada capacidad predictiva de las variables clínicas en la clasificación del alzheimer. No obstante, los modelos combinados `MC` y `M'C` junto con algunos modelos del `always.split.variables` superaron este rendimiento, evidenciando que la integración de los datos transcriptómicos depurados aporta valor añadido a la clasificación, afinando la discriminación entre estados cognitivos. Estos resultados demuestran la importancia de los enfoques multi-ómicos en contextos clínicos complejos.
+El modelo basado exclusivamente en variables confusoras alcanzó una **Accuracy** del 91.3%, con un IC95% de entre 87.5%-94.5%, confirmando la elevada capacidad predictiva de las variables clínicas en la clasificación del alzheimer. No obstante, los modelos combinados `MC` y `M'C` junto con algunos modelos del `always.split.variables` superaron este rendimiento, evidenciando que la integración de los datos transcriptómicos depurados aporta valor añadido a la clasificación, afinando la discriminación entre estados cognitivos. Estos resultados demuestran la importancia de los enfoques multi-ómicos en contextos clínicos complejos.
 
 ```{r}
 var_imp <- varImp(modelo_cv_C, scale = FALSE)
@@ -1552,20 +1611,19 @@ ggplot(top_vars, aes(x = reorder(Variable, Overall), y = Overall)) +
        x= "Variable") +
   theme_minimal()
 ```
-
 En el gráfico de importancias del modelo vemos que las tres variables más importantes son `pmi`, `rin` y `ceradsc` en ese orden, con una magnitud de importancia muy parecida, las últimas variable en términos de importancia son `braaksc1` y `msex1` que tienen un valor considerablemente más bajo que las otras tres.
 
-Si comparamos este gráfico de importancia con todos los demás se observa que, las variables claramente más importantes en los otros experimentos `braaksc1` y `ceradsc`, en este caso no son las más importantes. Esto puede deberse a que las variables técnicas como **PMI (Post Mortem Interval)** o **RIN (RNA Integrity number)** pueden tener una alta correlación indirecta con la calidad de las medidas transcriptómicas y los fenotipos, por lo que en un modelo sin genes, pueden actuar como proxies muy potentes.
+Si comparamos este gráfico de importancia con todos los demás se observa que, las variables claramente más importantes en los otros experimentos `braaksc1` y `ceradsc`, en este caso no son las más importantes. Esto puede deberse a que las variables técnicas como **PMI (Post Mortem Interval)** o **RIN (RNA Integrity number)** pueden tener una alta correlación indirecta con la calidad de las medidas transcriptómicas y los fenotipos, por lo que en un modelo sin genes, pueden actuar como proxis muy potentes.
 
 Por lo tanto, la mayor importancia de `PMI` o `RIN` en este gráfico no significa que tenga más peso causal real, si no que en este contexto específico con 5 variables, ofrecen una ruta **facil de partición que el modelo explota de manera prioritaria**. Es por esto, que es siempre importante interpretar la importancia en conjunto con las correlaciones y el contexto de los experiementos.
 
 ## Modelo RF `M+c` para matriz de importancia
 
-El objetivo de este análisis es evaluar como **influye la introducción de cada variable clínica o técnica** de forma individual en la estabilidad de los rankings de importancia de los genes dentro del modelo de clasificación. Se parte de la hipótesis de que si una variable `c` está relacionada con ciertos genes, al incluirla la posición de esos genes en el ranking de importancia debería estabilizarse. Es decir, su varianza en el ranking de importancia entre repeticiones debería **disminuir** respecto al modelo `M`.
+El objetivo de este análisis es evaluar como **influye la introducción de cada variable clínica o técnica** de forma individual en la estabilidad de los rankings de importancia de los genes dentro del modelo de clasificación. Se parte de la hipótesis de que si una variable `C` está relacionada con ciertos genes, al incluirla la posición de esos genes en el ranking de importancia debería desestabilizarse. Es decir, su varianza en el ranking de importancia entre repeticiones debería **aumentar** respecto al modelo `M`.
 
 Para ello se entrena el modelo `M + c` (Los genes + la variable `c`) 15 veces, usando los mismos procedimientos que en todos los modelos anteriores. En cada repetición se calcula **la importancia de las variables**, se construye un **ranking de los genes** basados en su importancia y se guarda la matriz para su análisis posterior.
 
-Este experimento permite **comparar la varianza del ranking de cada gen** en el modelo M, con la varianza de ese mismo gen en el modelo `M + c`. El cociente entre ambas varianzas indica el grado de influencia de la variable `c` sobre ese gen. Si es menor que 1, el **gen se ha estabilizado** tras introducir `c`, lo que podría indicar que está asociado con esa variables `c`.
+Este experimento permite **comparar la varianza del ranking de cada gen** en el modelo M, con la varianza de ese mismo gen en el modelo `M + c`. El cociente entre ambas varianzas indica el grado de influencia de la variable `c` sobre ese gen. Si es menor que 1, el **gen se ha estabilizado** tras introducir `c`.
 
 ```{r, eval=FALSE}
 varimp_total_list <- list()
@@ -1607,7 +1665,6 @@ for (var_c in vars_C) {
     train_data$Alzheimer <- train_data$Class
     train_data$Class <- NULL
     
-    # CV
     modelo_cv <- train(
       Alzheimer ~ .,
       data = train_data,
@@ -1656,8 +1713,120 @@ stopCluster(cl)
 A continuación, cargo las **matrices de ranking de genes** obtenidas tras el entrenamiento de `M + c`. Estas matrices contienen la posiciones de los genes en los rankings de `varImp` a lo largo de las 15 repeticiones para cada modelo.
 
 ```{r}
-ranking_Mc_list <- readRDS("Modelo Mc (Importancia)/ranking_total_list_Mplus_15rep.rds")
+ranking_Mc_list <- readRDS("Scripts/Modelo Mc (Importancia)/ranking_total_list_Mplus_15rep.rds")
 names(ranking_Mc_list)
+```
+```{r}
+ranking_Mc_mat <- do.call(rbind, ranking_Mc_list)
+gene_variancesMC <- apply(ranking_Mc_mat, 1, stats::var)
+gene_mean_rankMC <- apply(ranking_Mc_mat, 1, mean)
+```
+
+
+```{r}
+df_stability_MC <- data.frame(
+  Gene = rownames(ranking_Mc_mat),  
+  MeanRank = gene_mean_rankMC,      
+  RankVariance = gene_variancesMC
+)
+```
+
+Ahora al igual que hice para el experimento M, genero un gráfico con los 20 genes más estables para el **Modelo MC**, con el fin de observar que genes cambian de un modelo a otro. 
+
+```{r}
+df_stability_MC <- df_stability_MC %>% distinct(Gene, .keep_all = TRUE)
+ranking_esabilidad_ordenado_MC <- df_stability_MC[order(df_stability_MC$RankVariance, df_stability_MC$MeanRank), ]
+top20_estables_MC <- head(ranking_esabilidad_ordenado_MC, 20)
+
+ggplot(top20_estables_MC, aes(x = reorder(Gene, -MeanRank), y = MeanRank)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(
+    title = "20 genes más estables para MC (ROSMAP)",
+    x = "Gen",
+    y = "Ranking promedio"
+  ) +
+  theme_minimal()
+```
+
+Con el siguiente código uno los dos grafícos de estabilidad de genes para M y MC
+
+```{r}
+ranking_estabilidad_ordenado <- df_stability %>% 
+  arrange(RankVariance, MeanRank)
+
+top20_estables <- ranking_estabilidad_ordenado %>% 
+  slice_head(n = 20)
+
+plot_M <- ggplot(top20_estables, aes(x = reorder(Gene, -MeanRank), y = MeanRank)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(
+    title = "20 genes más estables para M",
+    x = "Gen",
+    y = "Ranking promedio"
+  ) +
+  theme_minimal()+
+  theme(plot.title = element_text(size = 11))
+
+df_stability_MC <- df_stability_MC %>% distinct(Gene, .keep_all = TRUE)
+ranking_esabilidad_ordenado_MC <- df_stability_MC[order(df_stability_MC$RankVariance, df_stability_MC$MeanRank), ]
+top20_estables_MC <- head(ranking_esabilidad_ordenado_MC, 20)
+
+plot_MC <- ggplot(top20_estables_MC, aes(x = reorder(Gene, -MeanRank), y = MeanRank)) +
+  geom_bar(stat = "identity", fill = "orange") +
+  coord_flip() +
+  labs(
+    title = "20 genes más estables para MC",
+    x = "Gen",
+    y = "Ranking promedio"
+  ) +
+  theme_minimal()+
+  theme(plot.title = element_text(size = 11))
+
+combined_plot <- plot_M + plot_MC + 
+  plot_layout(ncol = 2) + 
+  plot_annotation(
+    title = "Comparación de genes estables entre M y MC",
+    subtitle = "Análisis de estabilidad en el estudio ROSMAP",
+    theme = theme(plot.title = element_text(face = "bold", size = 14))
+  )
+
+combined_plot
+```
+
+Ahora genero un gráfico para representar para cada gen su **posición promedio** (`MeanRank`) en el ranking en el eje X y su **varianza del ranking** (`RankVariance`) entre repeticiones en el eje Y. Los genes **importantes y estables** estarán *abajo a la izquierda* (Ranking bajo y varianza baja). Mientras que los genes **poco importantes**, estarán dispersos en la parte derecha alta.
+
+```{r,warning=FALSE}
+fig_11A <- ggplot(df_stability, aes(x = MeanRank, y = RankVariance)) +
+  geom_point(alpha = 0.6, color = "steelblue") +
+  geom_smooth(method = "loess", se = FALSE, color = "darkred", linewidth = 1) +
+  labs(
+    title = "Estabilidad de los genes (modelo M)",
+    x = "Ranking promedio",
+    y = "Varianza del ranking"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 12, margin = margin(b = 10)), 
+    plot.margin = margin(t = 20, r = 10, b = 10, l = 10)  
+  )
+
+fig_11B <- ggplot(df_stability_MC, aes(x = MeanRank, y = RankVariance)) +
+  geom_point(alpha = 0.6, color = "seagreen") +
+  geom_smooth(method = "loess", se = FALSE, color = "darkred", linewidth = 1) +
+  labs(
+    title = "Estabilidad de los genes (modelo MC)",
+    x = "Ranking promedio",
+    y = "Varianza del ranking"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 12, margin = margin(b = 10)),  
+    plot.margin = margin(t = 20, r = 10, b = 10, l = 10)  
+  )
+
+(fig_11A | fig_11B)
 ```
 
 A continuación, calculo la varianza de cada modelo `M + c`. Esto nos permite posteriormente calcular el **cociente de varianzas**, con el que se comprobará si la inclusión de determinadas variables estabiliza la posición de los genes.
@@ -1676,7 +1845,7 @@ $$
 \text{Ratio}_i = \frac{\mathrm{Var}_{M+c}(r_i)}{\mathrm{Var}_{M}(r_i)}
 $$
 
-donde $r_i$ es la posición del gen $i$ en el ranking de importancia (`varImp`) a lo largo de las 15 repeticiones. Un valor $\text{Ratio}_i < 1$ indica que la inclusión de la covariable $c$ reduce la variabilidad del ranking del gen $i$, lo que puede interpretarse como una estabilización relacionada con dicha variable.
+donde $r_i$ es la posición del gen $i$ en el ranking de importancia (`varImp`) a lo largo de las 15 repeticiones. Un valor $\text{Ratio}_i < 1$ indica que la inclusión de la covariable $c$ reduce la variabilidad del ranking del gen $i$.
 
 ```{r}
 var_ratio_list <- list()
@@ -1719,10 +1888,10 @@ for (var_c in names(var_ratio_list)) {
     df_var_ratios <- rbind(df_var_ratios, df_tmp)
   }
 }
-df_var_ratios
+head(df_var_ratios)
 ```
 
-A continuación se visualiza, la **relación entre la varianza del ranking de cada gen en el modelo M y en el modelo M + c**. Los puntos por debajo de la diagonal corresponden a genes que **se estabilizan** al introducir la variable, lo que puede indicar **posible relación con ella**
+A continuación se visualiza, la **relación entre la varianza del ranking de cada gen en el modelo M y en el modelo M + c**. Los puntos por debajo de la diagonal corresponden a genes que **se estabilizan** al introducir la variable.
 
 ```{r}
 ggplot(df_var_ratios, aes(x = Var_M, y = Var_MC)) +
@@ -1730,19 +1899,19 @@ ggplot(df_var_ratios, aes(x = Var_M, y = Var_MC)) +
   geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") +
   facet_wrap(~ Covariable, scales = "free") +
   labs(
-    title = "Comparación de varianzas del ranking de genes",
+    title = "Comparación de varianzas del ranking de genes (Experimento ROSMAP)",
     subtitle = "Modelo M vs Modelo M + c",
     x = "Varianza en modelo M",
-    y = "Varianza en modelo M + covariable"
+    y = "Varianza en modelo M + confusora"
   ) +
   theme_minimal()
 ```
 
 En el gráfico anterior, cada punto representa un gen, en el eje x se representa la **varianza del ranking en el modelo M** y en el eje Y la **varianza del ranking en el modelo M + covariable c**. La línea roja marca el punto donde la varianza no cambia entre los modelos.
 
-Los genes que están por debajo de la diagonal tienen **menor varianza** al introducir la covariable, se estabilizan, por lo que pude haber relación con esa covariable. Los genes por encima de la diagonal se vuelven **mas inestables** porque no están relacionados o porque la inclusión de c los altera.
+Los genes que están por debajo de la diagonal tienen **menor varianza** al introducir la variable confusora, se estabilizan. Los genes por encima de la diagonal se vuelven **mas inestables**.
 
-Para facilitar la interpretación, voy a filtrar únicamente los **genes que muestran un cociente de varianza** superior a 1, es decir, aquellos que **se estabilizan al introducir la covariables**. Esto permite visualizar con mayor claridad el subconjunto de genes potencialmente asociados con cada covariables.
+Para facilitar la interpretación, voy a filtrar únicamente los **genes que muestran un cociente de varianza** superior a 1, es decir, aquellos que **se estabilizan al introducir la covariables**.
 
 ```{r}
 df_estables <- subset(df_var_ratios, Ratio < 1)
@@ -1750,10 +1919,10 @@ df_top_estables <- df_estables %>%
   group_by(Covariable) %>%
   slice_min(order_by = Ratio, n = 100) %>%
   ungroup()
-df_top_estables
+head(df_top_estables)
 ```
 
-La tabla muestra los 100 genes con menor ratio para cada una de las covariables. Cuánto más bajo sea el ratio, más se ha estabilizado ese determinado gen al introducir `c`.
+La tabla muestra los 100 genes con menor ratio para cada una de las variables confusoras. Cuánto más bajo sea el ratio, más se ha estabilizado ese determinado gen al introducir `c`.
 
 Ahora voy a graficar solo estos genes estabilizados
 
@@ -1765,10 +1934,10 @@ ggplot(df_top_estables, aes(x = Var_M, y = Var_MC)) +
   scale_x_continuous(labels = label_number(big.mark = ",")) +
   scale_y_continuous(labels = label_number(big.mark = ",")) +
   labs(
-    title = "Genes estabilizados tras introducir covariables",
-    subtitle = "Top 100 genes con Ratio de varianza < 1 por cada covariable",
+    title = "Genes estabilizados variables confusoras (Experimento ROSMAP)",
+    subtitle = "Top 100 genes con Ratio de varianza < 1 por cada confusora",
     x = "Varianza en modelo M",
-    y = "Varianza en modelo M + covariable"
+    y = "Varianza en modelo M + confusora"
   ) +
   theme_minimal(base_size = 13) +
   theme(
@@ -1777,14 +1946,12 @@ ggplot(df_top_estables, aes(x = Var_M, y = Var_MC)) +
   )
 ```
 
-En la figura se muestran, para cada covariable, los 100 genes con menor cociente de varianza (Ratio < 1). La mayoría de los genes se sitúan por debajo de la diagonal, indicando una estabilización de su posición en el ranking de importancia al introducir la covariable correspondiente. 
+En la figura se muestran, para cada covariable, los 100 genes con menor cociente de varianza (Ratio < 1). La mayoría de los genes se sitúan por debajo de la diagonal, indicando una estabilización de su posición en el ranking de importancia al introducir la variable confusora correspondiente. 
 
-Las variables clínicas `braaksc` y `ceradsc`producen la mayor estabilización de genes, lo que sugiere que están estrechamente asociadas con la relevancia predictiva de estos genes en la clasificación del estado cognitivo. Por el contrario, variables como `msex`, `pmi` o `rin` presentan un efecto má debil, aunque también presentan un efecto estabilizador sobre algunos genes.
+Las variables neuropatológicas `braaksc` y `ceradsc` producen la mayor estabilización de genes, lo que sugiere que están estrechamente asociadas con la relevancia predictiva de estos genes en la clasificación del estado cognitivo. Por el contrario, variables como `msex`, `pmi` o `rin` presentan un efecto má debil, aunque también presentan un efecto estabilizador sobre algunos genes.
 
-Este análisis apoya la utilidad de `braaksc` y `ceradsc` como covariables clínicas clave y justifica su incorporación en los modelos.
-
-Además de indentificar los genes más estabilizados por cada covariable, también voy a seleccionar los **genes con un ratio menor a 0.001**, manteniendo el registro de en que modelo (M + c) se observó dicha estabilización. Permite explorar si hay covariables que estabilizan más genes que otras.
-
+.
+Además de indentificar los genes más estabilizados por cada variable confusora, también voy a seleccionar los **genes con un ratio menor a 0.001**, manteniendo el registro de en que modelo (M + c) se observó dicha estabilización. Permite explorar si hay covariables que estabilizan más genes que otras.
 
 ```{r}
 df_extremos <- df_var_ratios %>%
@@ -1793,17 +1960,17 @@ df_extremos <- df_var_ratios %>%
 df_extremos
 ```
 
-A difrencia de la tabla anterior, esta muestra los genes con un ratio menor a 0.001. Cuanto menor sea el ratio más se estabilizan los genes.
+La tabla anterior muestra los genes con un ratio menor a 0.001. Cuanto menor sea el ratio más se estabilizan los genes.
 
 ```{r}
 ggplot(df_extremos, aes(x = Gene, y = Ratio, fill = Covariable)) +
   geom_col() +
   labs(
-    title = "Genes más estabilizados (Ratio < 0.001)",
-    subtitle = "Barras apiladas por covariable",
+    title = "Genes más estabilizados.Ratio < 0.001 (Experimento ROSMAP)",
+    subtitle = "Barras apiladas por variable confusora",
     x = "Gen",
     y = "Cociente de varianza (Ratio)",
-    fill = "Covariable"
+    fill = "Variable confusora"
   ) +
   theme_minimal(base_size = 12) +
   theme(
@@ -1811,11 +1978,228 @@ ggplot(df_extremos, aes(x = Gene, y = Ratio, fill = Covariable)) +
   )
 ```
  
-En la figura se representan los genes con cociente de varianzas inferior a 0.001, es decir, aquellos cuya estabilidad en el ranking de importancia mejoró de forma drástica al introducir alguna covariable. Cada barra representa un gen, y los colores indican las covariables responsables de la estabilización.
+En la figura se representan los genes con cociente de varianzas inferior a 0.001, es decir, aquellos cuya estabilidad en el ranking de importancia mejoró de forma drástica al introducir alguna variable confusora. Cada barra representa un gen, y los colores indican las covariables responsables de la estabilización.
 
-Loa genes `APOBEC3G`, `ARIH2`, `MSL1`, `PDCD10`, `SMYD4`, `TSSC4` y `ZRSR2` se extabilizan únicamente al introducir las variables clínicas `braaksc` y `ceradsc`, lo que sugiere una posible relación con el estado neuropatológico. En cambio, genes como `SPON2` o `ARHGEF11` presentan una estabilización combinada por múltiples covariables, incluidas variables técnicas, lo que apunta a su sensibilidad al ruido experimental y la necesidad de interpretarlos con cautela.
+Loa genes `APOBEC3G`, `ARIH2`, `MSL1`, `PDCD10`, `SMYD4`, `TSSC4` y `ZRSR2` se extabilizan únicamente al introducir las variables clínicas `braaksc` y `ceradsc`, lo que sugiere una posible relación con el estado neuropatológico. En cambio, genes como `SPON2` o `ARHGEF11` presentan una estabilización combinada por múltiples covariables, incluidas variables técnicas, lo que apunta a su sensibilidad al ruido experimental y la necesidad de interpretarlos con cautela. Esta visualización aporta información valiosa para priorizar genes estables y relevantes, descartando aquellos que podrían deber su importancia a factores de confusión. 
 
-Esta visualización aporta información valiosa para priorizar genes estables y relevantes, descartando aquellos que podrían deber su importancia a factores de confusión. 
+Ahora como análisis complementario se diseñó un enfoque específico para desenmascarar el efecto de la variable *msex*. Se van a entrenar 15 repeticiones del modelo **M + msex** y se compararon los rankings promedio con los ya obteidos del modelo **M**. El objetivo es identificar genes que tras la inclusión de *msex* perdieran relevancia de forma significativa, es decir, aquellos cuyo ranking promedio empeoró considerablemente.
+
+Los genes obtenidos, bajo la hipótesis de que están influenciados por diferencias sexuales se someterán a un enriquecimiento funcional mediante **GO**, con el objetivo de identificar procesos biológicos asociados al efecto de confusión de esta variable. 
+
+El entrenamiento se ha realizado con el siguiente código.
+
+```{r, eval=FALSE}
+cl <- makeCluster(parallel::detectCores() - 1)
+registerDoParallel(cl)
+
+
+M <- readRDS("ROSMAP_RINPMIAGESEX_resids.rds")
+C <- readRDS("ROSMAP_RINPMIAGESEX_covs.rds")
+C$Alzheimer <- factor(
+  C$cogdx,
+  levels = c("1", "2", "3", "4", "5"),
+  labels = c("NCI", "MCI", "MCI_Comorbid", "AD", "AD_Comorbid")
+)
+
+set.seed(123)
+train_index <- createDataPartition(C$Alzheimer, p = 0.8, list = FALSE)
+M_train <- M[train_index, ]
+C_train <- C[train_index, ]
+Y_train <- C_train$Alzheimer
+
+df_M_msex <- cbind(M_train, msex = C_train$msex)
+
+tune_grid <- expand.grid(
+  mtry = c(100, 200, 400, 800, 1000),
+  splitrule = "gini",
+  min.node.size = c(5, 10, 20, 25, 30)
+)
+
+control_cv <- trainControl(
+  method = "cv",
+  number = 10,
+  classProbs = TRUE,
+  sampling = "up",
+  allowParallel = TRUE
+)
+
+control_boot <- trainControl(
+  method = "boot",
+  number = 30,
+  classProbs = TRUE,
+  sampling = "up",
+  allowParallel = TRUE
+)
+
+modelos_boot_Mmsex <- list()
+
+for (i in 1:15) {
+  set.seed(100 + i)
+  
+  df_train <- upSample(x = df_M_msex, y = Y_train)
+  df_train$Alzheimer <- df_train$Class
+  df_train$Class <- NULL
+  
+  modelo_cv <- train(
+    Alzheimer ~ .,
+    data = df_train,
+    method = "ranger",
+    tuneGrid = tune_grid,
+    metric = "Accuracy",
+    trControl = control_cv,
+    importance = "impurity"
+  )
+  
+  best_grid <- modelo_cv$bestTune
+  
+  modelo_boot <- train(
+    Alzheimer ~ .,
+    data = df_train,
+    method = "ranger",
+    tuneGrid = best_grid,
+    metric = "Accuracy",
+    trControl = control_boot,
+    importance = "permutation"
+  )
+  
+
+  modelos_boot_Mmsex[[i]] <- modelo_boot
+}
+
+saveRDS(modelos_boot_Mmsex, "modelos_boot_Mmsex.rds")
+
+stopCluster(cl)
+
+```
+
+Cargo la lista con los 15 modelos entrenados para **M + msex**
+
+```{r}
+modelo_boot_Mmsex_list <- readRDS("Scripts/M_sex/modelos_boot_Mmsex.rds")
+```
+
+Creo la matriz de rankings para **M + msex**
+
+```{r}
+modelos_validos <- modelo_boot_Mmsex_list[!sapply(modelo_boot_Mmsex_list, function(m) inherits(m, "try-error") || is.null(m))]
+
+ranking_list <- lapply(seq_along(modelos_validos), function(i) {
+  modelo <- modelos_validos[[i]]
+  varImp(modelo)$importance %>%
+    arrange(desc(Overall)) %>%
+    tibble::rownames_to_column("Gene") %>%
+    mutate(!!paste0("Rank_", i) := row_number()) %>%
+    dplyr::select(Gene, !!paste0("Rank_", i))
+})
+
+ranking_matrix_Mmsex <- Reduce(function(x, y) merge(x, y, by = "Gene"), ranking_list)
+
+ranking_matrix_Mmsex <- ranking_matrix_Mmsex[order(ranking_matrix_Mmsex$Gene), ]
+rownames(ranking_matrix_Mmsex) <- ranking_matrix_Mmsex$Gene
+ranking_matrix_Mmsex$Gene <- NULL
+ranking_matrix_Mmsex <- as.matrix(ranking_matrix_Mmsex)
+ranking_matrix_Mmsex <- ranking_matrix_Mmsex[rownames(ranking_matrix_Mmsex) != "msex", ]
+```
+
+Calcular la media y varianzas de rankings para  cada gen en ambos modelos
+
+```{r}
+rank_mean_M <- apply(ranking_matrixM, 1, mean)
+rank_var_M <- apply(ranking_matrixM, 1, stats::var)
+
+rank_mean_Mmsex <- apply(ranking_matrix_Mmsex, 1, mean)
+rank_var_Mmsex <- apply(ranking_matrix_Mmsex, 1, stats::var)
+```
+
+Creo un DataFrame combinado y calulo las diferencias
+
+```{r}
+df_rankings <- data.frame(
+  Gene = rownames(ranking_matrixM),
+  MeanRank_M = rank_mean_M,
+  VarRank_M = rank_var_M,
+  MeanRank_Mmsex = rank_mean_Mmsex,
+  VarRank_Mmsex = rank_var_Mmsex
+)
+
+df_rankings$DiffRank = df_rankings$MeanRank_Mmsex - df_rankings$MeanRank_M
+df_rankings$DiffVar = df_rankings$VarRank_Mmsex - df_rankings$VarRank_M
+```
+
+Filtro los genes afectados por confusión, los que sufrieron cambios de ranking y varianza
+
+```{r}
+rank_threshold <- quantile(df_rankings$MeanRank_M, 0.25)
+var_threshold <- quantile(df_rankings$VarRank_M, 0.25)
+rank_increase <- quantile(df_rankings$MeanRank_Mmsex, 0.75)
+var_increase <- quantile(df_rankings$VarRank_Mmsex, 0.75)
+
+genes_confusos <- df_rankings %>%
+  filter(
+    MeanRank_M < rank_threshold,
+    VarRank_M < var_threshold,
+    MeanRank_Mmsex > rank_increase,
+    VarRank_Mmsex > var_increase
+  ) %>%
+  arrange(-DiffVar)
+```
+
+Visualizo los 20 genes más afectados
+
+```{r}
+top_confusos <- head(genes_confusos, 20)
+
+plot_estabilidad <- ggplot(top_confusos, aes(x = reorder(Gene, DiffVar), y = DiffVar)) +
+  geom_col(fill = "tomato") +
+  coord_flip() +
+  labs(
+    title = "Genes que pierden estabilidad e importancia al introducir 'msex'",
+    subtitle = "Ranking bajo y estable en M, ranking alto e inestable en M+msex",
+    x = "Gen",
+    y = "Aumento de varianza del ranking"
+  ) +
+  theme_minimal()
+```
+
+```{r,eval=FALSE}
+ggsave("estabilidad_msex.png", plot = plot_estabilidad, width = 9, height = 6, dpi = 300)
+```
+
+Ahora procedo a realizar el análisis de enriquecimiento
+
+Lo primero a realizar es covertir los genes a IDs de Entrez
+
+```{r}
+entrez_genes <- bitr(genes_confusos$Gene,
+                     fromType = "SYMBOL",
+                     toType = "ENTREZID",
+                     OrgDb = org.Hs.eg.db)
+```
+
+Ahora hago el enriquecimiento por GO.
+
+```{r}
+ego <- enrichGO(gene = entrez_genes$ENTREZID,
+                OrgDb = org.Hs.eg.db,
+                keyType = "ENTREZID",
+                ont = "BP", 
+                pAdjustMethod = "BH",
+                pvalueCutoff = 0.12, 
+                readable = TRUE)
+
+```
+
+Genero un gráfico
+
+```{r}
+dotplot(ego, showCategory = 15) +
+  ggtitle("GO: procesos biológicos afectados por los genes") +
+  theme(plot.title = element_text(size = 9))
+```
+
+```{r,eval=FALSE}
+ggsave("go_enrichment_plot.png", plot = plot_go, width = 9, height = 6, dpi = 300)
+```
 
 # BoxPlot comparativo de todos los modelos
 
@@ -1857,18 +2241,17 @@ ggplot(resample_total, aes(x = Modelo, y = Accuracy, fill = Modelo)) +
   geom_boxplot(color = "darkgreen") +
   theme_minimal() +
   labs(
-    title = "Comparativa de Accuracy entre modelos",
+    title = "Comparativa de Accuracy entre modelos (Experimento ROSMAP)",
     x = "Modelo",
     y = "Accuracy"
   ) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
-
 Los resultados visuales del BoxPlot permiten comparar el resultado de todos los modelos claramente. Se observa que los modelos con mejor resultado son los de `always.split.variables` + las variables `ceradsc` y `braaksc` junto con los modelos completos `MC` y `M'C`, confirmando la utilidad de integrar datos transcriptómicos y clínicos.
 
-En modelo `C` ofrece un rendimiento intermedio pero elevado, evidenciando que la potencia explicativa de las variables clínicas por si solas es bastante alta. En cambio, los modelos basados únicamente en expresión génica (`M` y `M'`) obtienen los resultados de Accuracy más bajos, aunque siguen siendo buenos resultados.
+En modelo `C` ofrece un rendimiento intermedio pero elevado, evidenciando que la potencia explicativa de las variables confusoras por si solas es bastante alta. En cambio, los modelos basados únicamente en expresión génica (`M` y `M'`) obtienen los resultados de Accuracy más bajos, aunque siguen siendo buenos resultados.
 
-La inclusión forzada de covariables mediante el parámetro `always.split.variables` demuestra que controlar factores neuropatológicos como `braaksc` o `ceradsc` mejora sustancialmente la clasificación, mientras que factores técnicos o demográficos como `pmi`,`rin` y `msex` aportan menos valor discriminativo, siendo los resultados prácticamente los mismos que en los modelos basados solo en expresión génica.
+La inclusión forzada de variables confusoras mediante el parámetro `always.split.variables` demuestra que controlar factores neuropatológicos como `braaksc` o `ceradsc` mejora sustancialmente la clasificación, mientras que factores técnicos o demográficos como `pmi`,`rin` y `msex` aportan menos valor discriminativo, siendo los resultados prácticamente los mismos que en los modelos basados solo en expresión génica.
 
 # Entrenamiento sobre datos de Test
 
@@ -1879,10 +2262,6 @@ Ahora una vez visto los resultados de los entrenamientos de cada uno de los mode
 ```{r}
 pred_M <- predict(modelo_bootM, newdata = test_dataM)
 conf_M <- confusionMatrix(pred_M, test_dataM$Alzheimer)
-precision <- conf_M$byClass[, "Pos Pred Value"]
-recall <- conf_M$byClass[, "Sensitivity"]
-f1 <- 2 * (precision * recall) / (precision + recall)
-f1
 ```
 
 ```{r}
@@ -1890,13 +2269,13 @@ print(conf_M)
 ```
 Este modelo fue entrenado únicamente con los datos de expresión génica (`M`) y evaluados sobre los datos de test.
 
-Muestra una **Accuracy** de 0.515, lo que indica que el modelo acierta aproximadamente el 51.5% de las predicciones. Aunque el resultado es superior al **No information Rate**, el **p-valor** no es estadísticamente ignificativo, lo que sugier que el modelo **no mejora significativamente respecto a una predicción aleatoria basada en la clase mayoritaria**. Muestra un valor de `Kappa` de 0.174, lo que indica **una pobre concordancia** entre las predicciones del modelo y la realidad, más alla de lo esperado debido al azar. 
+Muestra una **Accuracy** de 0.515, lo que indica que el modelo acierta aproximadamente el 51.5% de las predicciones. Aunque el resultado es superior al **No information Rate**,y el **p-valor** no es estadísticamente significativo, lo que sugiere que el modelo **no mejora significativamente respecto a una predicción aleatoria basada en la clase mayoritaria**. Muestra un valor de `Kappa` de 0.174, lo que indica **una pobre concordancia** entre las predicciones del modelo y la realidad, más alla de lo esperado debido al azar. 
 
 En la **clase AD (Alzheimer)**, el modelo detecta correctamente el 81% de los casos reales de Alzheimer, sin embargo, muchos **individuos que no pertenecen a esa clases son clasificados erróneamente**, lo que genera una baja especificidad. La **Balanced Accuracy** para esta clase muestra un rendimiento moderado.
 
 Por otro lado, las clases minoritarias como **MCI, o AD_Comorbid** no son bien clasificadas. La sensibilidad de `MCI` es 0, indicando que ningún caso real fue detectado como tal. Esto refleja que el modelo tiende a centrarse en las clases con mayor número de observaciones (**NCI y AD**) y no **captura adecuadamente las clases minoritarias**. 
 
-# Modelo M'
+## Modelo M'
 
 ```{r}
 pred_Mprima <- predict(modelo_bootMprima, newdata = test_dataMprima)
@@ -1926,13 +2305,13 @@ conf_MC <- confusionMatrix(pred_MC, test_dataMC$Alzheimer)
 ```{r}
 print(conf_MC)
 ```
-Este modelo incorpora tanto la matriz de expresión génica `M` como las variables clínicas y técnicas `C`, por lo que refelja el impacto de integrar datos fenotípicos y técnicos junto con datos moleculares.
+Este modelo incorpora tanto la matriz de expresión génica `M` como las variables confusoras `C`, por lo que refelja el impacto de integrar datos fenotípicos y técnicos junto con datos moleculares.
 
 Muestra un valor de **Accuracy** de 0.697, lo que supone un **incremento bastante notable respeccto a los dos modelos anteriores**. La precisión del modelo mejora casi en un 20%, y además, ahora **la mejora es estadísticamente significativa** (P-valor < 0.05). El valor de **Kappa** también mejora mucho, hasta un valor de 0.502, lo que refleja un **acuerdo moderado** entre predicciones y valores reales. Es la **mejor concordancia observada hasta ahora** entre clases reales y predichas.
 
-La **clase AD** muestra una sensibilidad de 1, es decir, el modelo **identifica correctamente todos los casos reales de Alzheimer**. También hay una mejora clara en especificidad. La **Balanced Accuracy** tiene un valor de 0.90, lo que indica que el modelo es muy robusto para detectar esta clase. La **clase NCI** muestra una sensibilidad de 0.7 y una **Balanced Accuracy** de 0.74, reflejando unos resultados bastante competentes y una clara mejora respecto a `M` y `M'`. La **clase MCI** muestra una sensibilidad muy baja 0.08, aunque mejor que 0, también mejora en la balanced accuracy. Muestra que **sigue siendo difícil detectar las clases minoritarias** aunque el añadir las variables, mejora la cobertura.
+La **clase AD** muestra una sensibilidad de 1, es decir, el modelo **identifica correctamente todos los casos reales de Alzheimer**. También hay una mejora clara en especificidad. La **Balanced Accuracy** tiene un valor de 0.90, lo que indica que el modelo es muy robusto para detectar esta clase. La **clase NCI** muestra una sensibilidad de 0.7 y una **Balanced Accuracy** de 0.74, reflejando unos resultados bastante competentes y una clara mejora respecto a `M` y `M'`. La **clase MCI** muestra una sensibilidad muy baja 0.08, aunque mejor que 0, también mejora en la balanced accuracy. Muestra que **sigue siendo difícil detectar las clases minoritarias**, aunque el añadir las variables, mejora la cobertura.
 
-El modelo **MC** demuestra el valor de incluir la matriz de variables para la mejora del rendimiento del modelo, especialmente a la hora de detectar la clase `AD`, donde alcanza una sensibilidad perfecta y un excelente balance.
+El modelo **MC** demuestra el valor de incluir la matriz de variables confusoras para la mejora del rendimiento del modelo, especialmente a la hora de detectar la clase `AD`, donde alcanza una sensibilidad perfecta y un excelente balance.
 
 ## Modelo M'C
 
@@ -1944,13 +2323,13 @@ conf_MprimaC <- confusionMatrix(pred_MprimaC, test_dataMprimaC$Alzheimer)
 ```{r}
 print(conf_MprimaC)
 ```
-Este modelo utiliza la matriz de expresión génica filtrada `M'` junto con las variables clínicas y técnicas `C`. Es un modelo en el que se elimina el ruido de los genes redundantes para comprobar si enmascaraban información importante.
+Este modelo utiliza la matriz de expresión génica filtrada `M'` junto con las variables confusoras `C`. Es un modelo en el que se elimina el ruido de los genes redundantes para comprobar si enmascaraban información importante.
 
 La **Accuracy** muestra un valor de 0.712, valor que supera incluso al modelo `MC` anterior. Además, el test de significación confirma que los resultados son estadísticamente significativos. El valor de **Kappa** es de 0.522, que es el valor más alto hasta ahora y relfleja una **concordancia considerable** entre predicción y realidad.
 
 En cuánto a la **clase AD**, se mantiene el rendimiento excelente que ya se observaba en el modelo anterior. Además, los valors de la **clase NCI** mejoran todos, hasta alcanzar una **Balanced Accuracy** de 0.78, lo que refleja que el modelo también es capaz de clasificar esta clase de forma correcta. En cuánto a los resutlados de las clases minoritarias, empeora un poco respecto al anterior modelo, la **clase MCI**, vuelve a mostrar una sensibilidad de 0, es decir no se logra detectar ninún caso.
 
-El **modelo M'C** ofrece un **rendimiento superior a todos los modelos anteriores** gracias a combinar una matriz de expresión filtrada más la variables clínicas y técnicas. La expresión de genes redundantes no solo no empeora el rendimiento si no que lo mejora.
+El **modelo M'C** ofrece un **rendimiento superior a todos los modelos anteriores** gracias a combinar una matriz de expresión filtrada más la variables confusoras La expresión de genes redundantes no solo no empeora el rendimiento si no que lo mejora.
 
 ## Modelo M + `always.split.variables`
 
@@ -1966,7 +2345,7 @@ print(conf_batch)
 ```
 Este modelo utiliza la **matriz completa M** junnto con el parámatero `always.split.vairbales = "batch`, lo que fuerza al algoritmo a realizar particiones con esta variable técniva.
 
-El valor de accuracy es de 56.06%, ligeramente superior al modelo M, pero **claramente inferior** cuando se introducen variables clínicas. El p-valor es mayor que 0.05, por lo tanto los resultados no son significativos y la Accuracy no es superior a la **No information Rate**. El Kappa es de 0.25, mejor que el modelo `M`, pero aún así baja.
+El valor de accuracy es de 56.06%, ligeramente superior al modelo M, pero **claramente inferior** cuando se introducen variables confusoras. El p-valor es mayor que 0.05, por lo tanto los resultados no son significativos y la Accuracy no es superior a la **No information Rate**. El Kappa es de 0.25, mejor que el modelo `M`, pero aún así baja.
 
 La **clase AD** muestra una sensibilidad del 0.832 y una **Balanced Accuracy** de 0.662. La **clase NCI** muestra una sensibilidad del 0.55 y una Balanced Accuracy del 0.666, resultados ligeramente superiores al modelo M. Una vez más las clases minoritarias siguen sin ser detectadas
 
@@ -2018,7 +2397,7 @@ Muestra una **Accuracy** de 0.561 y un valor de **Kappa** de 0.248, que aunque e
 
 La **clase AD** muestra una sensibilidad del 0.871 y una **Balanced Accuracy** de 0.664, indicando que el modelo mantiene buen rendimiento para Alzheimer, aunque algo inferior respecto al modelo anterior a los modelos completos. La **clase NCI** muestra una sensibilidad del 0.5 y una **Balanced Accuracy** del 0.663, similar al rendimiento del modelo M, con capacidad limitada para distinguir individuos sin deterioro. Este modelo sigue sin detectar las clases minoritarias
 
-Aunque `RIN` es una variable técnica relacionada con la calidad de la muestra, su inlcusión forzada no mejora significativamente la clasificación. De hecho, los resultados son comparables a los del modelo base `M`, lo que sugiere que su contribución es **limitada en términos predictivos**, al menos en los datos de test. No obstante, puede tener un papel más importante como **confusor**, influyendo indirectamente en la relación entre expresión génica y diagnóstico.
+Aunque `RIN` es una variable técnica relacionada con la calidad de la muestra, su inclusión forzada no mejora significativamente la clasificación. De hecho, los resultados son comparables a los del modelo base `M`, lo que sugiere que su contribución es **limitada en términos predictivos**, al menos en los datos de test. No obstante, puede tener un papel más importante como **confusor**, influyendo indirectamente en la relación entre expresión génica y diagnóstico.
 
 ### Covariable `msex`
 
@@ -2130,9 +2509,7 @@ Por lo tanto, forzar la variable `msex` no mejora el rendimiento del modelo, y p
 
 ```{r}
 pred_pmi <- predict(boot_splitMprima[["pmi"]], newdata =MprimavarC_split[["pmi"]]$test)
-
 conf_pmi <- confusionMatrix(data = pred_pmi, reference =MprimavarC_split[["pmi"]]$test$Alzheimer)
-
 print(conf_pmi)
 ```
 Este modelo muestra una **Accuracy** de 0.485 y un valor de **Kappa** de 0.142, estos resultados son muy malos, siendo este el modelo que peor rendimiento tiene de todos, siendo incluso peor que los modelos base `M` y `M'`. Por tanto, el parámetro `pmi`, pese a ser una covariable técnicamente potencialmente relevante, **no aporta señal útil para la clasificación de los individuos** cuando se fuerza en los splits del modelo.
@@ -2144,21 +2521,21 @@ pred_C <- predict(modelo_bootC, newdata =  test_dataC)
 conf_C <- confusionMatrix(pred_C, test_dataC$Alzheimer)
 print(conf_C)
 ```
-Este modelo utiliza únicamente las variables clínicas y técnicas `C`, sin incluir ningun datos molecular. El resultado es bastante competitivo, lo que indica que estas variables contienen información relevante para la clasificación. 
+Este modelo utiliza únicamente las variables confusoras `C`, sin incluir ningun datos molecular. El resultado es bastante competitivo, lo que indica que estas variables contienen información relevante para la clasificación. 
 
 El modelo muestra un **Accuracy** de 0.65 y un **Kappa** de 0.465, además el p-valor es menor que 0.05, por lo tanto los resultados son significativos. 
 
 La **clase AD** muestra una sensibilidad de 0.93 y una **Balanced Accuracy** de 0.925, el modelo identifica correctamente la mayoría de pacientes con Alzeimer. La **clase NCI** muestra una sensibilidad de 0.55 y una **Balanced Accuracy** de 0.667, lo que es un resultado moderado pero mejor que en mucho de los modelos anteriores. Sigue teniendo muchos problemas para detectar las clases minoritarias como `MCI`.
 
-El modelo basado solo en variables clínicas ofrece **un buen rendimiento global**, comparable al de algunos modelos moleculares. Sin embargo, aunque si detecta bien los individuos con Alzheimer, sufre más en la detección de los sujetos sanos, lo que indica que para una clasificación fina las variables clínicas no son suficientes.
+El modelo basado solo en variables confusoras ofrece **un buen rendimiento global**, comparable al de algunos modelos moleculares. Sin embargo, aunque si detecta bien los individuos con Alzheimer, sufre más en la detección de los sujetos sanos, lo que indica que para una clasificación fina las variables clínicas no son suficientes.
 
 ## Limitaciones del rendimiento sobre los datos de test y posibles soluciones.
 
 A pesar de que algunos modelos han aceptado valores buenos de precisión global, el rendimiento general en el conjuto de test presenta varias limitaciones que conviente tener en cuenta.
 
-Primero, el desbalance entre clases, aunque su utilizen técnicas de balancea para los datos de entrenamiento, el conjunto de test sigue reflejando el desbalance real de las clases. Esto afecta especialmente a clases minoritarias como `MCI_Comorbid` o `AD_Comorbid`, que en muchos modelos no han sido correctamente clasificcadas. Es por esto también que la mayoría de los modelos tienden a clasificar una parte significativa de las muestras como `AD`, la clase más prevalente. Esto indica que el modelo capta bien los patrones de esta clase, pero no logra distinguir adecuadamente otras categorías clínicas más sutiles.
+Primero, el desbalance entre clases, aunque su utilizen técnicas de balancea para los datos de entrenamiento, el conjunto de test sigue reflejando el desbalance real de las clases. Esto afecta especialmente a clases minoritarias como `MCI_Comorbid` o `AD_Comorbid`, que en muchos modelos no han sido correctamente clasificadas. Es por esto también que la mayoría de los modelos tienden a clasificar una parte significativa de las muestras como `AD`, la clase más prevalente. Esto indica que el modelo capta bien los patrones de esta clase, pero no logra distinguir adecuadamente otras categorías clínicas más sutiles.
 
-Para majoerar el rendimiento general del modelo para el conjunto de test se podrían considerar varias estrategias, como por ejemplo la unión de clases, es decir pasar de tener 5 clases a tener 3 clases, que serán: 
+Para mejorar el rendimiento general del modelo para el conjunto de test se podrían considerar varias estrategias, como por ejemplo la unión de clases, es decir pasar de tener 5 clases a tener 3 clases, que serán: 
 
 - La clase control o `NCI`
 
@@ -2167,6 +2544,3 @@ Para majoerar el rendimiento general del modelo para el conjunto de test se podr
 - La clase con Alzheimer o `AD` que incluiría la clase `AD` + la clase `AD_Comorbid`
 
 Este enfoque ayudaría a que las clases minoritarias tuvieras más individuos y el modelo las clasificara de mejor forma, además tampoco se perdería información del modelo porque las nuevas clases representaría lo mismo que las anteriores. 
-
-
-
