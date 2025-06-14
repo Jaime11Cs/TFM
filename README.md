@@ -57,5 +57,5 @@ cd TFM
 
 **Jaime Carreto Sánchez**  
 Master’s Degree in Bioinformatics 
-University of Murcia
+University of Murcia\\
 Mail: jaime.carretos@um.es
