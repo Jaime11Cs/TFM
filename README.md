@@ -1,63 +1,61 @@
-# TFM: Análisis predictivo con Random Forest sobre datos transcriptómicos y clínicos
+# TFM: Predictive Analysis with Random Forest on Transcriptomic and Clinical Data
 
-Este repositorio contiene todo el código, simulaciones y análisis desarrollados en el contexto del Trabajo de Fin de Máster (TFM) en Bioinformática.
-
----
-## Objetivos
-
-El objetivo principal de este trabajo es comprender el papel de las variables de confusión en modelos
-de Machine Learning no lineales, concretamente en algoritmos del tipo Random Forest. Para ello, se
-aplicarán técnicas de aprendizaje automático sobre datos transcriptómicos reales y simulados para
-observar su comportamiento. De forma más específica, se plantean los siguientes objetivos:
-
-- Generar datos sintéticos con control total sobre las variables de confusión, con el propósito de
-analizar su efecto en modelos de Machine Learning bajo un entorno controlado.
-- Estudiar el impacto de las variables de confusión sobre la identificación de genes relevantes
-- Estudiar el efecto de forzar la división basada en variables confusoras utilizando el parámetro ***always.split.variables*** en el entrenamiento de modelos ***Random Forest***
-- Identifcar genes cuya importancia como predictores del estado neuropatológico sea consistente y estable a lo largo de múltiples repeticiones y que, por tanto, puedan considerarse biomarcadores transcriptómicos potencialmente relevantes.
-  
----
-
-## Motivación
-
-En los modelos lineales clásicos, como la regresión múltiple, el tratamiento de variables confusoras está bien establecido. Sin embargo, cuando se trabaja con modelos no lineales como Random Forest, especialmente en escenarios de alta dimensionalidad, el manejo de variables confusoras es más complejo.
-
-Si una variable confusora está altamente correlacionada con variables ómicas, puede ser ignorada en los splits del modelo, siendo sustituida por predictores que enmascaran su efecto real. Además, en contextos donde el número de predictores supera ampliamente al de muestras, los modelos lineales tienden a eliminar el sesgo por regularización, pero Random Forest no.
-
-Por ello, surge la siguiente pregunta:  
-**¿Es posible construir modelos Random Forest que integren correctamente las variables confusoras para maximizar la precisión predictiva y, al mismo tiempo, preservar la interpretabilidad de los genes relevantes?**
+This repository contains all the code, simulations, and analyses developed for the Master’s Thesis (TFM) in Bioinformatics.
 
 ---
 
-## Estructura del repositorio
+## Objectives
 
-- [`1_Experimentos_Framingham/`](./1_Experimentos_Framingham/):  Experimentos de predicción con datos del estudio de Framingham. 
-- [`2_Simulacion/`](./2_Simulacion): Generación de datos simulados con estructura causal controlada.
-- [`3_Experimentos_ROSMAP/`](./3_Experimentos_ROSMAP): Experimentos con datos reales transcriptómicos del estudio ROSMAP.
+The main goal of this work is to understand the role of confounding variables in non-linear machine learning models, specifically in Random Forest algorithms. To achieve this, machine learning techniques are applied to both real and simulated transcriptomic datasets in order to study their behavior. More specifically, the following objectives are proposed:
 
---- 
-## Tecnologías y herramientas utilizadas
-
-- Lenguaje: **R** y **Python**
-- Librerías: `ranger`, `caret`, `clusterProfiler`, `tidyverse`, `ggplot2`, `upSample`, `SMOTE`, etc.
-- Análisis: modelos de clasificación, selección de variables, simulaciones, Random Forest.
-- Datos: reales (ROSMAP) y simulados con estructura causal conocida.
+- Generate synthetic data with full control over confounding variables, allowing their effect to be analyzed in a controlled environment.
+- Study the impact of confounding variables on the identification of relevant genes.
+- Evaluate the effect of forcing splits on confounding variables using the `always.split.variables` parameter when training Random Forest models.
+- Identify genes whose importance as predictors of neuropathological status is consistent and stable across multiple repetitions, and which could therefore be considered potentially relevant transcriptomic biomarkers.
 
 ---
 
-## Cómo reproducir los análisis
+## Motivation
 
-1. Clona este repositorio:
+In classical linear models, such as multiple regression, the treatment of confounding variables is well established. However, when using non-linear models such as Random Forest—especially in high-dimensional settings—the handling of confounders is more complex.
+
+If a confounding variable is highly correlated with omics predictors, it may be ignored during the split process, being replaced by variables that mask its true effect. Moreover, in settings where the number of predictors far exceeds the number of samples, linear models tend to eliminate confounding bias through regularization, but Random Forest does not.
+
+Hence, the central research question becomes:  
+**Is it possible to train Random Forest models that properly integrate confounding variables to maximize predictive accuracy while preserving the interpretability of key genes?**
+
+---
+
+##  Repository structure
+
+- [`1_Experimentos_Cardio/`](./1_Experimentos_Cardio): Experiments using clinical data from the Framingham study.
+- [`2_Simulacion/`](./2_Simulacion): Generation of simulated datasets with explicit causal structure.
+- [`3_Experimentos_ROSMAP/`](./3_Experimentos_ROSMAP): Experiments using real transcriptomic data from the ROSMAP study.
+
+---
+
+##  Technologies and tools used
+
+- Languages: **R** and **Python**
+- R packages: `ranger`, `caret`, `clusterProfiler`, `tidyverse`, `ggplot2`, `upSample`, `SMOTE`, etc.
+- Techniques: classification models, variable selection, feature importance analysis, data simulation, Random Forest.
+- Data: real (ROSMAP, Framingham) and simulated data with known causal structure.
+
+---
+
+## How to reproduce the analyses
+
+1. Clone the repository:
 
 ```bash
 git clone git@github.com:Jaime11Cs/TFM.git
 cd TFM
+
 ```
----
 
 ## Autor
 
 **Jaime Carreto Sánchez**  
-Máster en Bioinformática  
-Universidad de Murcia
-Correo: jaime.carretos@um.es
+Master’s Degree in Bioinformatics 
+University of Murcia
+Mail: jaime.carretos@um.es

@@ -29,13 +29,14 @@ library(ggplot2)
 library(doParallel)
 library(dplyr)
 library(pROC)
-library(DMwR2)
+library(DMwR)
+library(patchwork)
 ```
 
 Defino mi derectorio de trabajo 
 
 ```{r}
-setwd("~/Escritorio/TFM/generando_dataset")
+setwd("~/TFM_GitHub/TFM/2_Simulacion")
 ```
 
 Fijo una semilla para garantizar la reproducibilidad
@@ -46,7 +47,7 @@ set.seed(123)
 
 # Introducción
 
-El presente análisis tiene como objetivo evaluar el impacto de variables clínicas potencialmente confusoras sobre la capacidad predictiva de modelos Random Forest en el contexto de una enfermedad simulada (`Alzheimer`). Para ello, se ha simulado un conjunto de datos con estructura casual controladam en el que ciertas variables clínicas (`C`) influyen sobre un subcojunto de genes (`M`), y este a su vez sobre la variable objetivo binaria (`Y`). Además, se han generado genes ruidosos sin relación casual con `C` ni con `Y`, reproduciendo un escenario realista de datos ómicos.
+El presente análisis tiene como objetivo evaluar el impacto de variables clínicas potencialmente confusoras sobre la capacidad predictiva de modelos Random Forest en el contexto de una enfermedad simulada (`Alzheimer`). Para ello, se ha simulado un conjunto de datos con estructura casual controlada en el que ciertas variables clínicas (`C`) influyen sobre un subcojunto de genes (`M`), y estos a su vez sobre la variable objetivo binaria (`Y`). Además, se han generado genes ruidosos sin relación casual con `C` ni con `Y`, reproduciendo un escenario realista de datos ómicos.
 
 ## Especificaciones de los datos simulados
 
@@ -88,16 +89,16 @@ Así se modela **la confusión real (C → M' → Y)**
 
 # Objetivos
 
-- Simular un conjunto de datos realista con variables clínicas (`C`), genes (`M`) y una variable objetivo (`Y`), controlando sus relaciones causales.
+- Simular un conjunto de datos realista con variables confusoras (`C`), genes (`M`) y una variable objetivo (`Y`), controlando sus relaciones causales.
 
 - Evaluar el redimiento de modelos Random Forest entrenados con diferentes subconjuntos de variables:
   - Solo genes `M`
-  - Genes + clínicas `MC`
+  - Genes + confusoras `MC`
   - Genes informativos `AB`
-  - AB + clínicas `AB + C`
+  - AB + confusoras `AB + C`
   - Genes informativos `AB` + D
-  - `ABD` + variables clínicas
-  - Modelos con variables clínicas forzadas en los splits (always.split.variables)
+  - `ABD` + variables confusoras
+  - Modelos con variables confusoras forzadas en los splits (always.split.variables)
   
 - Calcular métricas de rendimiento con bootstrapping y comparar modelos mediante intervalos de confianza y sus visualizaciones
 
@@ -109,7 +110,7 @@ Así se modela **la confusión real (C → M' → Y)**
 Ahora importo el Dataset y veo la estructura de los datos
 
 ```{r}
-mydata <- read.csv("datos_simulados.csv")
+mydata <- read.csv("dataset_simulado.csv")
 str(mydata)
 ```
 
@@ -255,7 +256,7 @@ El **Intervalo de confianza** da un resultado de [0.828-0.863], lo que indica qu
   
 Cuanto más estrecho el intervalo, más confiable es el rendimiento. En este caso es bastante aceptable y el rango es alto en ambos extremos.
 
-En conclusión, el modelo entrenado sobre este conjunto de datos logra una muy buena capacidad de discriminación entre clases, a pesar de que a priori al no tener las variables clínicas `C` debería ser el peor de los modelos. Voy a pasar a entrenar los otros modelos, ya sí con las variables clínicas y a comparar los resultados, para dilucidar si las variables clínicas ayudan a la eficacia del modelo.
+En conclusión, el modelo entrenado sobre este conjunto de datos logra una muy buena capacidad de discriminación entre clases, a pesar de que a priori al no tener las variables confusoras `C` debería ser el peor de los modelos. Voy a pasar a entrenar los otros modelos, ya sí con las variables clínicas y a comparar los resultados, para dilucidar si las variables confusoras ayudan a la eficacia del modelo.
 
 ```{r}
 var_imp <- varImp(modelo_cv_M, scale = FALSE)
@@ -264,20 +265,21 @@ top_vars <- var_imp$importance %>%
   dplyr::arrange(desc(Overall)) %>%
   dplyr::slice(1:20)
 
-ggplot(top_vars, aes(x = reorder(Variable, Overall), y = Overall)) +
+var_M <- ggplot(top_vars, aes(x = reorder(Variable, Overall), y = Overall)) +
   geom_col(fill = "steelblue") +
   coord_flip() +
-  labs(title = "Top 20 variables más importantes",
+  labs(title = "20 variables más importantes, Modelo M (Experimento Simulado)",
        y = "Importancia",
        x= "Variable") +
   theme_minimal()
+var_M
 ```
 
-El gráfico anterior nos permite ver claramente cuales son los genes más influyentes en el modelo `M`, que **no incluye las variables clínicas**.
+El gráfico anterior nos permite ver claramente cuales son los genes más influyentes en el modelo `M`, que **no incluye las variables confusoras**.
 
 -**Dominancia de ciertos genes**: Genes como `B_gene176`, `B_gene197` o `B_gene59` presentan una **importancia superior** al resto, lo que indica que el modelo se apoya más en ellos para tomar decisiones. Esto sugiere que están fuertemente asociados con la variable objetivo `Alzheimer`, o al menos con las estructuras latentes que la modelan.
 
--**Presencia de genes del grupo B**: Es intersante observar como la mayoría de los genes más importantes pertenecen al **grupo B**  (genes relacionados con sexo), solo unas pocas de las variables más importantes pertenecen al **grupo A** (`A_gene75`). Esto es lo esperado, porque mientras los **genes del grupo A** tienen una correlación con la variable objetivo de 0.2, los **genes del grupo B** tienen una correlación mucho más alta, del 0.5, por lo tanto, es normal que aparezcan en mayor proporción entre las variables más importantes del modelo. Además, esto puede indicar que el modelo, sin tener acceso a las variables clínicas, **reconoce su señal indirectamente a través de la expresión génica**.
+-**Presencia de genes del grupo B**: Es intersante observar como la mayoría de los genes más importantes pertenecen al **grupo B**  (genes relacionados con sexo), solo unas pocas de las variables más importantes pertenecen al **grupo A** (`A_gene75`). Esto es lo esperado, porque mientras los **genes del grupo A** tienen una correlación con la variable objetivo de 0.2, los **genes del grupo B** tienen una correlación mucho más alta, del 0.5, por lo tanto, es normal que aparezcan en mayor proporción entre las variables más importantes del modelo. Además, esto puede indicar que el modelo, sin tener acceso a las variables confusoras, **reconoce su señal indirectamente a través de la expresión génica**.
 
 -**Importancia distribuida**: Aunque unos pocos genes sobresalen, la **caída en la importancia es progresiva**, lo cual es típico en Random Forest cuando no hay una única variable dominante pero sí varias relevantes que trabajan en conjunto.
 
@@ -376,18 +378,23 @@ top_vars <- var_imp$importance %>%
   dplyr::arrange(desc(Overall)) %>%
   dplyr::slice(1:20)
 
-ggplot(top_vars, aes(x = reorder(Variable, Overall), y = Overall)) +
+var_MC <- ggplot(top_vars, aes(x = reorder(Variable, Overall), y = Overall)) +
   geom_col(fill = "steelblue") +
   coord_flip() +
-  labs(title = "Top 20 variables más importantes",
+  labs(title = "20 variables más importantes, Modelo MC (Experimento Simulado)",
        y = "Importancia",
        x= "Variable") +
   theme_minimal()
+var_MC
+
+figura_unida <- var_M + var_MC + plot_layout(ncol = 2)
+
+ggsave("variables_importantes_horizontal.png", figura_unida, width = 14, height = 6, dpi = 300)
 ```
 
 El gráfico anterior nos permite ver la importancia de las variables del modelo `MC`.
 
-  - **Dominancia de las variables clínicas**: La variable `edad` aparece con una **importancia desproporcionadamente alta**, seguida de `sexo`, con una importancia bastante menor en comparación con `sexo`. Esto confirma que el modelo **prioriza completamente la señal directa** proveniente de las variables clínicas para predecir la enfermedad, desplazando la importancia de los genes.
+  - **Dominancia de las variables confusoras**: La variable `edad` aparece con una **importancia desproporcionadamente alta**, seguida de `sexo`, con una importancia bastante menor en comparación con `sexo`. Esto confirma que el modelo **prioriza completamente la señal directa** proveniente de las variables clínicas para predecir la enfermedad, desplazando la importancia de los genes.
   
   - **Genes relevantes aún presentes**: A pesar de que `edad` y `sexo` acaparan la mayor parte de la importancia, genes como `B_gene197`, `B_gene176`, `B_gene59` o `B_gene51` siguen figurando entre los más importantes. Muchos de ellos también aparecían en el top del modelo `M`, lo que **valida su rol predictivo**, incluso cuando las variables clínicas están disponibles. Al igual que antes aparecen muchos más genes del **grupo B** que del **grupo A**.
   
@@ -473,7 +480,7 @@ resumen_modelos_split <- lapply(names(modelo_split), function(var_name) {
 print(resumen_modelos_split)
 ```
 
-En la tabla enterior se muestran los mejores hiperparámetros para cada variable clínicas `C`. Ahora entrenamos con **Botstrapping** con los mejores parámetros seleccionados para cada vairbale clínica.
+En la tabla enterior se muestran los mejores hiperparámetros para cada variable confusora `C`. Ahora entrenamos con **Botstrapping** con los mejores parámetros seleccionados para cada variable clínica.
 
 ```{r}
 resultados_boot_split <- list()
@@ -525,12 +532,14 @@ for (var_c in names(modelo_split)) {
 ```
 
 #### **Edad**
+
 - Tiene una **media de Balanced Accuracy de 0.914**, con un **IC del 95%: (0.893–0.927)**.
 - Es el **mejor resultado** entre todos los modelos con variables forzadas.  
 - En la simulación, la **edad influye directamente** sobre el grupo de genes **A (100 genes)** y **también sobre la variable Y (Alzheimer)** con un peso de 0.3.  
 - Por tanto, es una **variable altamente informativa**, y forzarla mejora la capacidad del modelo para hacer buenas particiones.
 
 #### **RIN**
+
 - Balanced Accuracy de **0.848**, con **IC 95%: (0.837–0.858)**  
 - Esta variable **no se usó** para generar ni M ni Y.  
 - Su buen rendimiento puede deberse a:
@@ -539,11 +548,13 @@ for (var_c in names(modelo_split)) {
   - Algún **patrón aleatorio captado por el modelo**
 
 #### **Sexo**
+
 - Balanced Accuracy: **0.833**, IC 95%: **(0.819–0.848)**  
 - En la simulación, el **sexo influye sobre el grupo B** de genes (200 genes) y **también sobre Y**, con un peso de 0.1.  
 - Aunque tiene menor impacto que la edad, sigue siendo una variable **moderadamente informativa**.
 
 #### **Lote**
+
 - Balanced Accuracy: **0.849**, IC 95%: **(0.829–0.862)**  
 - Al igual que RIN, **lote no fue utilizado directamente** en la simulación.  
 - Un rendimiento tan alto podría deberse a:
@@ -573,11 +584,35 @@ for (var in variables_forzadas) {
     geom_bar(stat = "identity", fill = "steelblue") +
     coord_flip() +
     theme_minimal() +
-    labs(title = paste("Top 20 variables más importantes -", var),
+    labs(title = paste("20 variables más importantes (Modelo Simulado) forzando: ", var),
          x = "Variable", y = "Importancia")
   
   print(p)  
 }
+
+```
+
+```{r}
+df_edad <- top_importancias %>% filter(Split == "edad")
+df_sexo <- top_importancias %>% filter(Split == "sexo")
+
+plot_edad <- ggplot(df_edad, aes(x = reorder(Variable, Overall), y = Overall)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "20 variables más importantes (Modelo Simulado) forzando: edad",
+       x = "Variable", y = "Importancia")
+
+plot_sexo <- ggplot(df_sexo, aes(x = reorder(Variable, Overall), y = Overall)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "20 variables más importantes (Modelo Simulado) forzando: sexo",
+       x = "Variable", y = "Importancia")
+
+figura_combinada <- plot_edad + plot_sexo + plot_layout(ncol = 2)
+
+ggsave("importancia_edad_sexo_horizontal.png", figura_combinada, width = 14, height = 6, dpi = 300)
 
 ```
 
@@ -681,7 +716,7 @@ cat("IC 95%:", round(ic_AB[1], 3), "-", round(ic_AB[2], 3), "\n")
 
 Este modelo usa únicamente los genes que, por construcción del dataset, **realmente influyen en la variable objetivo** `Alzheimer`. Por tanto, se espera un rendimiento elevado y estable, y efectivamente lo consigue:
 
-- La Balanced Accuracy es alto, y comparable a la del modelo `M`, aunque lejana a la del modelo `MC` que usaba todas las variables
+- La Balanced Accuracy es alta, y comparable a la del modelo `M`, aunque lejana a la del modelo `MC` que usaba todas las variables
 - El intervalo de confianza es **estrecho**, lo que indica que el modelo es **estable y consistente** bajo re-muestreo
 - El modelo **no se ve afectado por ruido ni confusión de variable clínicas**, ya que únicamente entrena con los genes relevantes.
   
@@ -791,7 +826,7 @@ cat("IC 95%:", round(ic_AB_C[1], 3), "-", round(ic_AB_C[2], 3), "\n")
 
 Este modelo combina la **información relevante de los genes** con la **información contextual y potencialmente confusora de las variable clínicas**, y el resultado es muy positivo.
 
-- Se observa una **mejora clara** respecto al modelo AB (0.844 → 0.945), lo que sugiere que las variables clínicas **aportan información adicional relevante** para la predición.
+- Se observa una **mejora clara** respecto al modelo AB (0.844 → 0.945), lo que sugiere que las variables confusoras **aportan información adicional relevante** para la predición.
 
 - Este comportamiento es coherente con el diseño simulado del experimento, donde tanto las variable clínicas (`edad` y `sexo`) como los genes influyen en la variable `Alzheimer`.
   
@@ -825,13 +860,13 @@ ggplot(top_vars, aes(x = reorder(Variable, Overall), y = Overall)) +
 
 - Las dos variables más importantes con **mucha diferencia** son edad y sexo, seguidas de algunos genes.
 
-- Este patrón indica que el modelo **detecta que las variables clínicas son muy predictivas de la variable Y**, incluso más que los propios genes que la generaron (**grupo A y B**).
+- Este patrón indica que el modelo **detecta que las variables confusoras son muy predictivas de la variable Y**, incluso más que los propios genes que la generaron (**grupo A y B**).
 
 - Esto es coherente con la simulación, donde `edad` y `sexo`tenían una correlación directa con `Y`, además de influir indirectamente a través de su efecto en los genes `A`y `B`.
 
-- Los genes del **grupo B** siguen dominando frente a los del **grupo A**, lo que corroborá su mayor importancia. Además si nos fijamos en los genes más importantes después de las variables clínicas, aparecen el **B_gene21** y el **B_gene176**, que ya aparecían como los dos genes mas importantes en el modelo sin variables clínicas, lo que refleja que aunque ahora el modelo se fija mucho más en las variables clínicas importantes (`Edad` y `Sexo`), los mismos genes siguen teniendo importancia en los procesos de aprendizaje del modelo.
+- Los genes del **grupo B** siguen dominando frente a los del **grupo A**, lo que corroborá su mayor importancia. Además si nos fijamos en los genes más importantes después de las variables clínicas, aparecen el **B_gene21** y el **B_gene176**, que ya aparecían como los dos genes mas importantes en el modelo sin variables confusoras, lo que refleja que aunque ahora el modelo se fija mucho más en las variables confusoras importantes (`Edad` y `Sexo`), los mismos genes siguen teniendo importancia en los procesos de aprendizaje del modelo.
 
-Las variables clínicas `C` dominan el modelo cuando se incluyen, lo que refleja tanto su impacto directo sobre `Y`como su rol como cofounders que afectan a `M`. Esto **refuerza la idea de que el modelo puede confundirse** si no se controla bien el efecto de las variables clínicas.
+Las variables confusoras `C` dominan el modelo cuando se incluyen, lo que refleja tanto su impacto directo sobre `Y`como su rol como cofounders que afectan a `M`. Esto **refuerza la idea de que el modelo puede confundirse** si no se controla bien el efecto de las variables clínicas.
 
 ## Modelo RF con AB + `always.split.variables` + C
 
@@ -979,7 +1014,7 @@ for (var_c in names(modelo_splitAB)) {
 
 - En el caso de `sexo`, `rin` y `lote`, los resultados son muy similares entre M y AB, lo que sugiere que estas variables **no tienen una influencia suficientemente fuerte o directa sobre Y** como para marcar diferencias al ser forzadas.
 
-Se concluye que forzar una **variable clínicamente relavante** como `edad` **mejora el rendimiento** pero solo si los predictores también son informativos. **El mejor enfoque es combinar una buena selección de predictores (AB)** con un uso dirigido de variables clínicas como `edad` mediante `always.split.variables`. Incluir predictores irrelevantes como en el modelo M **diluye el efecto positivo de forzar una variable útil**.
+Se concluye que forzar una **variable clínicamente relavante** como `edad` **mejora el rendimiento** pero solo si los predictores también son informativos. **El mejor enfoque es combinar una buena selección de predictores (AB)** con un uso dirigido de variables confusoras como `edad` mediante `always.split.variables`. Incluir predictores irrelevantes como en el modelo M **diluye el efecto positivo de forzar una variable útil**.
 
 ```{r}
 top_importancias <- lapply(names(modelo_splitAB), function(var_c) {
@@ -1221,20 +1256,20 @@ cat("Balanced Accuracy ABD_C:", round(media_ABD_C, 3), "\n")
 cat("IC 95%:", round(ic_AB_C[1], 3), "-", round(ic_ABD_C[2], 3), "\n")
 ```
 
-Este modelo combina **la información relevante de los genes A y B** + un grupo de genes que no es informativo y que puede llegar a confunidir al modelo + **la información contextual de las variables clínicas**. El resultado es muy bueno
+Este modelo combina **la información relevante de los genes A y B** + un grupo de genes que no es informativo y que puede llegar a confundir al modelo + **la información contextual de las variables confusoras**. El resultado es muy bueno
 
-- Se observa una clara mejora frente al modelo `ABD`(0.84 → 0.931). Esto es lógico y sigue la pauta de todos los otros modelos, cuando se añaden las variables clínicas, estas **aportan información adicional relevante** para la predicción y mejoran los resultados.
+- Se observa una clara mejora frente al modelo `ABD`(0.84 → 0.931). Esto es lógico y sigue la pauta de todos los otros modelos, cuando se añaden las variables confusoras, estas **aportan información adicional relevante** para la predicción y mejoran los resultados.
 
  | Modelo     | Balanced Accuracy | IC 95%                   |
 |------------|-------------------|--------------------------|
 | **AB + C** | **0.945**         | [0.932, 0.959]           |
 | **ABD + C** | 0.931            | [0.932, 0.94]           |
 
-- Pero aunque el resultado es muy bueno, no llega a superar al del modelo **AB + C**, es decir el modelo que solo tiene genes informativos + las variables clínicas. 
+- Pero aunque el resultado es muy bueno, no llega a superar al del modelo **AB + C**, es decir el modelo que solo tiene genes informativos + las variables confusoras. 
 
 - Esto nos indica que no por incluir más genes el modelo va a ser mejor, si no que incluso al revés, al introducir 300 genes que no aportan información, el modelo puede tomar decisiones basadas en estos genes y bajar el resultado del modelo como está sucediendo en este caso.
 
-Por lo tanto, comprobamos que **usar solo los  genes informativos** junto con las variables clínicas permite construir un modelo mucho más fiable a la hora de predecir que sin introducimos los **genes del grupo D o los genes ruido**. En escenarios reales, si se puede realizar una selección eficaz de variables, ya sea por conocimiento previo o mediante análisis exploratorio, se pueden lograr modelos con mejores resultados y más generalizables.
+Por lo tanto, comprobamos que **usar solo los  genes informativos** junto con las variables confusoras permite construir un modelo mucho más fiable a la hora de predecir que sin introducimos los **genes del grupo D o los genes ruido**. En escenarios reales, si se puede realizar una selección eficaz de variables, ya sea por conocimiento previo o mediante análisis exploratorio, se pueden lograr modelos con mejores resultados y más generalizables.
 
 Ahora calculo las 20 variables más importantes
 
@@ -1253,11 +1288,12 @@ ggplot(top_vars, aes(x = reorder(Variable, Overall), y = Overall)) +
        x= "Variable") +
   theme_minimal()
 ```
+
 - **Edad y sexo** son con mucha diferencia las variables más importantes del modelo a la hora de decidir. Esto es coherente con la simulación ya que estas tienen mucho peso tanto en la generación de los genes como en la variable objetivo `Y`.
 
 -Seguido de las dos variables clínicas aparecen genes que ya eran muy importantes en el anterior modelo. Esto refleja que aunque el modelo se fija ahora mucho más en las variables clínicas (`Edad` y `Sexo`), los mismos genes siguen teniendo importancia en los procesos de aprendizaje del modelo.
 
--Si comparamos este resultado con el del modelo **AB_C** nos damos cuenta que los valores de importancia de las variables clínicas en este modelo han disminuido, mientras que la importancia de los genes ha aumentado. Esto puede ser la clave del porque los resultados del modelo han disminuido. Mientras que el modelo anterior se fia mucho más en las variables clínicas, mucho más importantes, este modelo, quizá debido a la introducción del **grupo de genes D** dsiminuye un poco la importancia de las variables clínicas (Mucho más  importantes que los genes) para darle más valor a los genes.
+-Si comparamos este resultado con el del modelo **AB_C** nos damos cuenta que los valores de importancia de las variables clínicas en este modelo han disminuido, mientras que la importancia de los genes ha aumentado. Esto puede ser la clave del porque los resultados del modelo han disminuido. Mientras que el modelo anterior se fija mucho más en las variables clínicas, mucho más importantes, este modelo, quizá debido a la introducción de ruido por parte de los genes del **grupo de genes D** disminuye un poco la importancia de las variables clínicas (Mucho más  importantes que los genes) para darle más valor a los genes.
 
 ## Modelo RF con ABD + `always.split.variables` + C
 
@@ -1384,7 +1420,6 @@ for (var_c in names(modelo_splitABD)) {
 }
 ```
 
-
 ```{r}
 top_importancias <- lapply(names(modelo_splitABD), function(var_c) {
   imp <- varImp(modelo_splitABD[[var_c]], scale = FALSE)$importance
@@ -1412,7 +1447,7 @@ for (var in variables_forzadas) {
 
 # Cuarta Parte. Modelo solo con la variables clínicas
 
-Ahora voy a entrenar un modelo solo con las variables clínicas. Este experimento permite comprobar cuánto poder predictivo tienen solo las variables clínicas. Nos ayudará a interpretar si, por ejemplo, edad y sexo que son las variables mas importantes, por sí solas pueden predecir la variable objetivo `Y` con precisión. Este enfoque será clave para comparar con otros modelos.
+Ahora voy a entrenar un modelo solo con las variables confusoras. Este experimento permite comprobar cuánto poder predictivo tienen solo estas variables. Nos ayudará a interpretar si, por ejemplo, edad y sexo que son las variables mas importantes, por sí solas pueden predecir la variable objetivo `Y` con precisión. Este enfoque será clave para comparar con otros modelos.
 
 Primero generamos los datos de train y test
 
@@ -1488,11 +1523,11 @@ cat("Balanced Accuracy C:", round(media_C, 3), "\n")
 cat("IC 95%:", round(ic_C[1], 3), "-", round(ic_C[2], 3), "\n")
 ```
 
-El modelo consigue una Balanced Accuracy del 82.9%, lo que es representa un buen resultado, sobre todo teneindo en cuanta que no dispone de información genética (`M`), sino únicamente de las **4 variables clínicas**. 
+El modelo consigue una Balanced Accuracy del 82.9%, lo que es representa un buen resultado, sobre todo teneindo en cuanta que no dispone de información genética (`M`), sino únicamente de las **4 variables confusoras**. 
 
 Es **coherente con cómo se han generado los datos simulados**, donde las variables `edad` y `sexo`, **tienen una influencia muy importante en la variable Y**. Por lo tanto, el modelo es capaz de capturar parte importante se la señal predictiva solo con C, aunque de manera limitada
 
-Este resultado resalta la hipótesis causal planteada, donde las variables clínicas no solo incluyen en ciertos genes, sino que también tienen un impacto muy fuerte sobre `Y`. 
+Este resultado resalta la hipótesis causal planteada, donde las variables confusoras no solo incluyen en ciertos genes, sino que también tienen un impacto muy fuerte sobre `Y`. 
 
 ```{r}
 var_imp <- varImp(modelo_cv_C, scale = FALSE)
@@ -1512,7 +1547,7 @@ ggplot(top_vars, aes(x = reorder(Variable, Overall), y = Overall)) +
 
 Como se observa en el gráfico de importancias, las variables **RIN y lote**, que fueron diseñadas como neutras (sin relación con M ni con Y), no están ayudando prácticamente nada al modelo a predecir, y lo que ayudan es por pura correlación estadística inducida (ruido o colinealidad accidental). 
 
-Algo a destacar, esque mientras en todos los modelos anteriores donde se han usado las variables clínicas, siempre era la variable **edad** la que mayor importancia tenía, como es normal por su mayor relación con Y. Pero en este caso la variable más importante para el modelo es `sexo` que tiene una relación mucho más leve con `Y`, del 0.1, por el 0.3 de `edad`. Esto puede deberse a que como hay muy pocas variables, la métrica puede estar **sesgada a favor de variables categóricas o con menos niveles** como el sexo. 
+Algo a destacar, es que mientras en todos los modelos anteriores donde se han usado las variables confusoras, siempre era la variable **edad** la que mayor importancia tenía, como es normal por su mayor relación con Y. Pero en este caso la variable más importante para el modelo es `sexo` que tiene una relación mucho más leve con `Y`, del 0.1, por el 0.3 de `edad`. Esto puede deberse a que como hay muy pocas variables, la métrica puede estar **sesgada a favor de variables categóricas o con menos niveles** como el sexo. 
 
 La importancia de `sexo` en este gráfico no significa que tenga más peso causal real, si no que en este contexto específico del modelo con solo 4 variables, `sexo` ofrece una **ruta fácil de partición que el modelo explota de manera proritaria**. Este es un artefacto común en los árboles de decisón con pocas variables y por eso es recomendable interpretar siempre la importancia en conjunto con las correlaciones y el conocimiento previo de la simulación. 
 
@@ -1524,55 +1559,55 @@ Ahora voy a generar un **BoxPlot** para cada modelo del experimento ara así com
 
 ```{r}
 resample_M <- modelo_bootM$resample %>%
-  rename(BalancedAccuracy = `BalancedAccuracy.Balanced Accuracy`) %>%
+  dplyr::rename(BalancedAccuracy = `BalancedAccuracy.Balanced Accuracy`) %>%
   mutate(Modelo = "M")
 
 resample_MC <- modelo_bootMC$resample %>%
-  rename(BalancedAccuracy = `BalancedAccuracy.Balanced Accuracy`) %>%
+  dplyr::rename(BalancedAccuracy = `BalancedAccuracy.Balanced Accuracy`) %>%
   mutate(Modelo = "MC")
 
 resample_splitMC <- lapply(names(modelo_split), function(var_c) {
   df <- modelo_split[[var_c]]$resample
   df <- df %>%
-    rename(BalancedAccuracy = `BalancedAccuracy.Balanced Accuracy`) %>%
+    dplyr::rename(BalancedAccuracy = `BalancedAccuracy.Balanced Accuracy`) %>%
     mutate(Modelo = paste0("Split_MC_", var_c))
   df
 }) %>% bind_rows()
 
 resample_AB <- modelo_bootAB$resample %>%
-  rename(BalancedAccuracy = `BalancedAccuracy.Balanced Accuracy`) %>%
+  dplyr::rename(BalancedAccuracy = `BalancedAccuracy.Balanced Accuracy`) %>%
   mutate(Modelo = "AB")
 
 resample_AB_C <- modelo_bootAB_C$resample %>%
-  rename(BalancedAccuracy = `BalancedAccuracy.Balanced Accuracy`) %>%
+  dplyr::rename(BalancedAccuracy = `BalancedAccuracy.Balanced Accuracy`) %>%
   mutate(Modelo = "AB_C")
 
 resample_splitAB <- lapply(names(modelo_split), function(var_c) {
   df <- modelo_splitAB[[var_c]]$resample
   df <- df %>%
-    rename(BalancedAccuracy = `BalancedAccuracy.Balanced Accuracy`) %>%
+    dplyr::rename(BalancedAccuracy = `BalancedAccuracy.Balanced Accuracy`) %>%
     mutate(Modelo = paste0("Split_AB_", var_c))
   df
 }) %>% bind_rows()
 
 resample_ABD <- modelo_bootABD$resample %>%
-  rename(BalancedAccuracy = `BalancedAccuracy.Balanced Accuracy`) %>%
+  dplyr::rename(BalancedAccuracy = `BalancedAccuracy.Balanced Accuracy`) %>%
   mutate(Modelo = "ABD")
 
 resample_ABD_C <- modelo_bootABD_C$resample %>%
-  rename(BalancedAccuracy = `BalancedAccuracy.Balanced Accuracy`) %>%
+  dplyr::rename(BalancedAccuracy = `BalancedAccuracy.Balanced Accuracy`) %>%
   mutate(Modelo = "ABD_C")
 
 resample_splitABD <- lapply(names(modelo_split), function(var_c) {
   df <- modelo_splitABD[[var_c]]$resample
   df <- df %>%
-    rename(BalancedAccuracy = `BalancedAccuracy.Balanced Accuracy`) %>%
+    dplyr::rename(BalancedAccuracy = `BalancedAccuracy.Balanced Accuracy`) %>%
     mutate(Modelo = paste0("Split_ABD_", var_c))
   df
 }) %>% bind_rows()
 
 resample_C <- modelo_bootC$resample %>%
-  rename(BalancedAccuracy = `BalancedAccuracy.Balanced Accuracy`) %>%
+  dplyr::rename(BalancedAccuracy = `BalancedAccuracy.Balanced Accuracy`) %>%
   mutate(Modelo = "C")
 
 resample_total <- bind_rows(resample_M, resample_MC, resample_C, resample_splitMC, resample_AB, resample_AB_C, resample_splitAB, resample_ABD, resample_ABD_C, resample_splitABD)
@@ -1583,7 +1618,7 @@ ggplot(resample_total, aes(x = Modelo, y = BalancedAccuracy, fill = Modelo)) +
   geom_boxplot(color = "darkgreen") +
   theme_minimal() +
   labs(
-    title = "Comparativa de Balanced Accuracy entre modelos",
+    title = "Comparativa de Balanced Accuracy (Simulación)",
     x = "Modelo",
     y = "Balanced Accuracy"
   ) +
@@ -1597,19 +1632,19 @@ ggplot(resample_total, aes(x = Modelo, y = BalancedAccuracy, fill = Modelo)) +
 - AB contiene la mayoría de la señal real (grupo B influye fuerte en Y, grupo A de forma leve).
 - C incluye edad, que influye directamente en Y
 - Sexo también contribuye, aunque débilmente
-- La mejora al añadir C sugiere que el modelo es capaz de **incorporar variables clínicas relevantes junto a los genes para maximizar rendimiento**
+- La mejora al añadir C sugiere que el modelo es capaz de **incorporar variables confusoras relevantes junto a los genes para maximizar rendimiento**
 
 ## Modelos solo con expresión (M, AB, ABD):
 
 -**M** (todos los genes) rinde peor (~0.844), debido a la dilución de la señal de A y B entre 1000 genes, la mayoría ruido.
 
--**AB** (Solo genes relevantes) mejora ligeramente, mostrando que la selección de genes útiles ayuda, pero el rendimiento aún es limitado sin las variables clinicas
+-**AB** (Solo genes relevantes) mejora ligeramente, mostrando que la selección de genes útiles ayuda, pero el rendimiento aún es limitado sin las variables confusoras
 
 -**ABD** (Incluye también D) cae (~0.840), lo que muestra que agregar genes sin información real introduce ruido y perjudica.
 
 El modelo reconoce y responde al **contenido informativo real** de los genes. Incluir solo genes con relación causal mejora respeccto a usar todos, pero no basta sin las variables clínicas
 
-## Modelo únicamente con las variables clínicas
+## Modelo únicamente con las variables confusoras
 
 El modelo `C` muestra unos resultados muy similares al modelo `M` lo que indica que los resultados no son del todo buenos. Además aunque la media es algo superior a la del modelo `AB`, su rendimiento es claramente inferior a los modelos `AB+c` y `MC`. Esto indica que, aunque `C` tiene poder predictivo, es insuficiente por sí solo para capturar toda la señal relevante simulada en los genes `M`
 
@@ -1656,7 +1691,7 @@ El modelo **es robusto frente a confusión** y no se deja arrastrar por **RIN o 
 - Aún más con edad y sexo
 - Son robustos frente a RIN/lote
 
--**El mejor modelo es AB + C**, que incluye genes con relación causal y variables clínicas relevantes
+-**El mejor modelo es AB + C**, que incluye genes con relación causal y variables confusoras relevantes
 
 -**El modelo generaliza bien**, incluso cuando se le fuerza a usar ruido, no sufre deterioro externo
 
@@ -1664,4 +1699,4 @@ El modelo **es robusto frente a confusión** y no se deja arrastrar por **RIN o 
 
 # Conclusión
 
-Los resultados muestran que el uso de variables clínicas puede mejorar el rendimiento predictivo, pero también introduce riesgo de sobreajuste si actúan como confusoras. En particular, el parámetro `always.split.variables` permite identificar cuándo un modelo está priorizando estas variables. Los modelos entrenados solo con genes informativos `AB` logran un buen rendimiento, pero mejoran al incluir variables clínicas relevantes (`Edad` y `Sexo`). El análisis de importancia de variables respalda estas observaciones, mostrando como `edad` y `sexo` emergen como dominantes cuando se fuerza su inclusión. En conjunto, este enfoque permite evaluar el impacto de la confusión y de la selección de variables en contextos biomédicos simulados.
+Los resultados muestran que el uso de variables confusoras puede mejorar el rendimiento predictivo, pero también introduce riesgo de sobreajuste si actúan como confusoras. En particular, el parámetro `always.split.variables` permite identificar cuándo un modelo está priorizando estas variables. Los modelos entrenados solo con genes informativos `AB` logran un buen rendimiento, pero mejoran al incluir variables clínicas relevantes (`Edad` y `Sexo`). El análisis de importancia de variables respalda estas observaciones, mostrando como `edad` y `sexo` emergen como dominantes cuando se fuerza su inclusión. En conjunto, este enfoque permite evaluar el impacto de la confusión y de la selección de variables en contextos biomédicos simulados.

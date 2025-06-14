@@ -33,31 +33,31 @@ Se espera que algunas variables clínicas como `male`, `age`, `education` y `BMI
 
 Para evaluar el impacto de estas **variables de confusión**, se desarrollarán tres modelos de Random Forest utilizando `ranger`:
 
-1. **Modelo M**: solo incluye las variables (`M`), es decir, todas las variables del dataset excluyendo `male`, `age`, `education` y `BMI`. Se espera que este modelo tenga la menor capacidad predictiva, al no incluir las variables clínicas más relevantes.
+1. **Modelo M**: solo incluye las variables (`M`), es decir, todas las variables del dataset excluyendo `male`, `age`, `education` y `BMI`. Se espera que este modelo tenga la menor capacidad predictiva, al no incluir las variables confusoras más relevantes.
 
 2. **Modelo MC**: utiliza todas las variables disponibles (`M + C`). Al incorporar las variables de confusión, se espera que mejore sustancialmente el rendimiento del modelo frente al anterior.
 
-3. **Modelo M + always.split(C)**: incluye únicamente las variables `M`, pero forzando que cada una de las variables clínicas (`C`) se utilice como variable de división en los árboles de decisión mediante el parámetro `always.split.variables` del paquete `ranger`. Este parámetro permite que determinadas variables estén siempre disponibles como candidatas a dividir en cada nodo. El objetivo es evaluar si forzar el uso de estas variables críticas permite alcanzar un rendimiento similar (o incluso superior) al modelo MC, reduciendo además la complejidad computacional en escenarios con grandes volúmenes de datos.
+3. **Modelo M + always.split(C)**: incluye únicamente las variables `M`, pero forzando que cada una de las variables confusoras (`C`) se utilice como variable de división en los árboles de decisión mediante el parámetro `always.split.variables` del paquete `ranger`. Este parámetro permite que determinadas variables estén siempre disponibles como candidatas a dividir en cada nodo. El objetivo es evaluar si forzar el uso de estas variables confusoras permite alcanzar un rendimiento similar (o incluso superior) al modelo MC, reduciendo además la complejidad computacional en escenarios con grandes volúmenes de datos.
 
-Este diseño experimental permitirá evaluar no solo el impacto predictivo de las variables clínicas, sino también el valor práctico del parámetro `always.split.variables` en entornos reales.
+Este diseño experimental permitirá evaluar no solo el impacto predictivo de las variables confusoras, sino también el valor práctico del parámetro `always.split.variables` en entornos reales.
 
 
 # Carga de librerías y configuración inicial
 
-```{r}
+```{r,warning=FALSE}
 library(caret)
 library(lattice)
 library(ggplot2)
 library(doParallel)
 library(dplyr)
 library(pROC)
-library(DMwR2)
+library(DMwR)
 ```
 
 Defino mi directorio de trabajo:
 
 ```{r}
-setwd("~/Escritorio/TFM/Primer_boceto")
+setwd("~/TFM_GitHub/TFM/1_Experimento_Framingham")
 ```
 
 Fijo una semilla aleatoria para garantizar la reproducibilidad
@@ -72,6 +72,7 @@ set.seed(123)
 mydata <- read.csv("framingham.csv")
 str(mydata)
 ```
+
 El conjunto de datos contiene 4240 observaciones y 16 variables numéricas.
 
 ## Tratamiento de valores ausentes
@@ -131,7 +132,7 @@ df_C <- cbind(C)
 
 # Modelos Random Forest
 
-Una vez echo todo el preprocesamiento de los datos, voy a pasar a entrenar los diferentes modelos.
+Una vez hecho todo el preprocesamiento de los datos, voy a pasar a entrenar los diferentes modelos.
 
 ## Modelo Random Forest con la matriz M
 
@@ -233,6 +234,7 @@ train_dataMC <- downSample(
 )
 table(train_dataMC$TenYearCHD)
 ```
+
 Como se observa, el downsampling se ha realizado de manera correcta.
 
 ```{r}
@@ -445,7 +447,7 @@ ggplot(resample_total, aes(x = Modelo, y = Accuracy, fill = Modelo)) +
   geom_boxplot(color = "darkgreen") +
   theme_minimal() +
   labs(
-    title = "Comparativa de Accuracy entre modelos",
+    title = "Comparativa de Accuracy entre modelos del experimento Framingham",
     x = "Modelo",
     y = "Accuracy"
   ) +
@@ -466,6 +468,7 @@ Ahora observo los resultados de la matriz de confusión
 ```{r}
 print(conf_M)
 ```
+
 ## Resultados RF con Dataframe MC sobre Test
 
 ```{r}
@@ -515,13 +518,13 @@ Por ello, además de aplicar un balanceo en los datos de entrenamiento mediante 
 
 ### Modelo M
 
-Este modelo, construido únicamente con variables no clínicas, presenta una:
+Este modelo, construido únicamente con variables no confusoras, presenta una:
 
 - `Balanced Accuracy` = 0.60  
 - `Sensitivity` = 0.65  
 - `Specificity` = 0.55  
 
-Muestra un rendimiento limitado: la baja especificidad y la sensibilidad moderada reflejan que el modelo tiene dificultades tanto para identificar individuos en riesgo como para evitar falsos positivos. Esto era esperable al haber excluido variables claves como `age` o `BMI`.
+Muestra un rendimiento limitado: la baja especificidad y la sensibilidad moderada reflejan que el modelo tiene dificultades tanto para identificar individuos en riesgo como para evitar falsos positivos. Esto era esperable al haber excluido variables claves como `age` o `male`.
 
 ### Modelo MC
 
@@ -535,7 +538,7 @@ Mejora notablemente respecto al modelo M, especialmente en sensibilidad, lo que 
 
 ### Modelos con `always.split.variables`
 
-Se entrenaron modelos independientes incluyendo las variables del conjunto M más **una única variable clínica forzada** en los nodos de división mediante el parámetro `always.split.variables`. El objetivo era evaluar si el uso explícito de variables clínicamente relevantes en los splits podía compensar la exclusión del resto de variables clínicas.
+Se entrenaron modelos independientes incluyendo las variables del conjunto M más **una única variable confusora forzada** en los nodos de división mediante el parámetro `always.split.variables`. El objetivo era evaluar si el uso explícito de variables clínicamente relevantes en los splits podía compensar la exclusión del resto de variables clínicas.
 
 #### `education`
 
@@ -575,7 +578,7 @@ El modelo con `male` forzada obtiene un rendimiento muy similar al de `BMI`, con
 
 ## Conclusión
 
-A partir de los resultados obtenidos en este análisis, se pueden extraer varias conclusiones clave relacionadas con los objetivos planteados. El principal objetivo era evaluar si forzar la división de nodos en variables clínicas consideradas críticas mediante el parámetro `always.split.variables` podía ofrecer un rendimiento comparable o incluso superior al uso del conjunto completo de variables (`MC`).
+A partir de los resultados obtenidos en este análisis, se pueden extraer varias conclusiones clave relacionadas con los objetivos planteados. El principal objetivo era evaluar si forzar la división de nodos en variables confusoras consideradas críticas mediante el parámetro `always.split.variables` podía ofrecer un rendimiento comparable o incluso superior al uso del conjunto completo de variables (`MC`).
 
 Los resultados han demostrado que sí: el modelo con la variable `age` forzada en los splits no solo ha igualado, sino que ha superado al modelo completo en métricas clave como la `Balanced Accuracy`. Este hallazgo es especialmente relevante en el contexto de datasets clínicos complejos y con alta dimensionalidad, ya que permite reducir la carga computacional manteniendo (o incluso mejorando) el rendimiento del modelo. Además, se gana en interpretabilidad, ya que se identifican claramente variables clave que guían las decisiones del modelo.
 

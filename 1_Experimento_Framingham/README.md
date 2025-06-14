@@ -1,96 +1,97 @@
-# Experimentos con datos clínicos del estudio Framingham
+# Experiments with Clinical Data from the Framingham Study
 
-Esta carpeta contiene los experimentos realizados con datos clínicos del estudio **Framingham Heart Study**. El objetivo es realizar una exploración preliminar sobre el impacto de las variables **confusoras** en modelos de clasificación de baja dimensionalidad utilizando Random Forest.
-
----
-
-## Objetivos
-
-- Evaluar el efecto de incluir variables confusoras sobre el rendimiento de modelos Random Forest.
-- Analizar el impacto del parámetro `always.split.variables` al forzar el uso de covariables específicas en los splits.
-- Comparar el rendimiento de diferentes configuraciones del modelo sobre datos de entrenamiento y test.
+This folder contains experiments performed using clinical data from the **Framingham Heart Study**. The goal is to conduct a preliminary analysis of the impact of **confounding variables** on low-dimensional classification models using Random Forest.
 
 ---
 
-## Contenido
+## Objectives
 
-- `Entrenamiento_Framingham.Rmd`: notebook principal en R Markdown con todo el flujo de análisis.
-- `Entrenamiento_Framingham.html`: versión HTML exportada del análisis.
-- `framingham.csv`: datos clínicos reales del estudio Framingham.
-
----
-
-## Código principal: `Entrenamiento_Framingham.Rmd`
-
-1. **Carga y preprocesamiento de datos**
-   - Imputación de valores ausentes.
-   - Definición de matriz de predictores (**M**) y confusoras (**C**).
-   - Asignación de la variable objetivo (**Y**).
-
-2. **Entrenamiento del modelo**
-   - Algoritmo: `Random Forest` con `caret::train()` (motor `ranger`).
-   - Validación: 5-fold cross-validation + 15 bootstraps.
-   - Métrica principal: **Accuracy**.
-
-3. **Configuraciones evaluadas**
-   - `M`: solo predictores.
-   - `MC`: predictores + todas las confusoras.
-   - `M + var`: modelo forzando en los splits una confusora individual (`age`, `sex`, `education`, `BMI`) con `always.split.variables`.
-
-4. **Salidas generadas**
-   - Tabla con Accuracy media e IC95% por modelo.
-   - Métricas de test: Accuracy, Balanced Accuracy, Sensitivity, Specificity, Kappa, TP, TN, FP, FN.
-   - Gráficos comparativos.
+- Evaluate the effect of including confounding variables on the performance of Random Forest models.
+- Analyze the impact of the `always.split.variables` parameter when forcing specific covariates into tree splits.
+- Compare the performance of different model configurations on training and test data.
 
 ---
 
-## Datos utilizados
+## Contents
 
-El fichero `framingham.csv` contiene variables clínicas con las siguientes agrupaciones:
-
-- **M (predictoras)**: subconjunto de variables clínicas con posible valor predictivo.
-- **C (confusoras)**: `age`, `sex`, `education`, `BMI`, consideradas potenciales confundidoras.
-- **Y (objetivo)**: variable binaria a predecir.
+- `Entrenamiento_Framingham.Rmd`: main R Markdown notebook with the full analysis workflow.
+- `Entrenamiento_Framingham.html`: exported HTML version of the notebook.
+- `framingham.csv`: real clinical data from the Framingham study.
 
 ---
 
-## Parámetros de configuración
+## Main script: `Entrenamiento_Framingham.Rmd`
 
-- **Modelo base**: Random Forest (`ranger`)
-- **Validación cruzada**: 5 folds
-- **Bootstrapping**: 15 repeticiones
-- **Split forzado**: `always.split.variables = c("var")`
+1. **Data loading and preprocessing**
+   - Imputation of missing values.
+   - Definition of predictor matrix (**M**) and confounder matrix (**C**).
+   - Assignment of the target variable (**Y**).
 
----
+2. **Model training**
+   - Algorithm: `Random Forest` using `caret::train()` with the `ranger` engine.
+   - Validation: 5-fold cross-validation + 15 bootstraps.
+   - Main metric: **Accuracy**.
 
-## Entrada esperada
+3. **Evaluated configurations**
+   - `M`: predictors only.
+   - `MC`: predictors + all confounding variables.
+   - `M + var`: model forcing a single confounder (`age`, `sex`, `education`, `BMI`) in the splits using `always.split.variables`.
 
-- `framingham.csv`: debe contener columnas correspondientes a:
-  - Predictores (**M**)
-  - Confusoras (**C**)
-  - Objetivo (**Y**)
-
----
-
-## Resultados generados
-
-- Boxplot comparativo de Accuracy entre modelos.
-- Matriz de confusión de test por modelo.
-
----
-
-## Interpretación de resultados
-
-- El modelo **MC** (predictores + confusoras) obtuvo la mayor Accuracy.
-- Forzar `age` con `always.split.variables` también mejoró el rendimiento.
-- Forzar otras variables como `education` o `sex` redujo la precisión del modelo.
-- Esto sugiere que **no todas las confusoras son útiles** y que el forzado debe usarse selectivamente.
+4. **Generated outputs**
+   - Table with mean Accuracy and 95% CI for each model.
+   - Test metrics: Accuracy, Balanced Accuracy, Sensitivity, Specificity, Kappa, TP, TN, FP, FN.
+   - Comparative plots.
 
 ---
 
-## Reproducibilidad
+## Data used
 
-Para ejecutar el análisis:
+The file `framingham.csv` contains clinical variables grouped as follows:
+
+- **M (predictors)**: subset of clinical variables with potential predictive value.
+- **C (confounders)**: `age`, `sex`, `education`, `BMI`, considered potential confounders.
+- **Y (target)**: binary variable to predict.
+
+---
+
+## Configuration parameters
+
+- **Base model**: Random Forest (`ranger`)
+- **Cross-validation**: 5 folds
+- **Bootstrapping**: 15 repetitions
+- **Forced split**: `always.split.variables = c("var")`
+
+---
+
+## Required input
+
+- `framingham.csv`: must contain columns for:
+  - Predictors (**M**)
+  - Confounders (**C**)
+  - Target variable (**Y**)
+
+---
+
+## Output produced
+
+- Comparative boxplot of Accuracy across models.
+- Test confusion matrix per model.
+
+---
+
+## Result interpretation
+
+- The **MC** model (predictors + confounders) achieved the highest Accuracy.
+- Forcing `age` using `always.split.variables` also improved performance.
+- Forcing variables like `education` or `sex` reduced model accuracy.
+- This suggests that **not all confounders are equally useful**, and forcing them should be applied selectively.
+
+---
+
+## Reproducibility
+
+To run the analysis:
 
 ```r
 rmarkdown::render("Entrenamiento_Framingham.Rmd")
+
